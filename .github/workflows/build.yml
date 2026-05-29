@@ -6,6 +6,12 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-latest
@@ -46,6 +52,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: toolbox-windows.zip
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
