@@ -1,0 +1,51 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download ffmpeg
+        run: |
+          curl -L -o ffmpeg.zip https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
+          Copy-Item ffmpeg_tmp/ffmpeg-*-essentials_build/bin/ffmpeg.exe .
+          Copy-Item ffmpeg_tmp/ffmpeg-*-essentials_build/bin/ffprobe.exe .
+
+      - name: Build EXE
+        run: |
+          pyinstaller --onefile `
+            --add-data "templates;templates" `
+            --add-data "static;static" `
+            --name toolbox `
+            app.py
+
+      - name: Package
+        run: |
+          Compress-Archive -Path dist/toolbox.exe,ffmpeg.exe,ffprobe.exe -DestinationPath toolbox-windows.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: toolbox-windows.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

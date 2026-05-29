@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>多功能工具箱</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+  <div class="max-w-3xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold mb-6 text-center">
+      多功能工具箱
+      <span id="version" class="text-sm font-normal text-gray-500"></span>
+    </h1>
+
+    <!-- Tab 导航 -->
+    <div class="flex border-b border-gray-700 mb-6" id="tabs">
+      <button class="tab-btn active px-5 py-2" data-tab="video">视频下载</button>
+      <button class="tab-btn px-5 py-2 text-gray-500" data-tab="more" disabled>更多功能开发中...</button>
+    </div>
+
+    <!-- 视频下载 Tab -->
+    <div id="tab-video" class="tab-panel">
+      <div class="flex gap-2 mb-6">
+        <input id="url-input" type="url" placeholder="粘贴网页链接，如微信公众号文章..."
+               class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 focus:outline-none focus:border-blue-500">
+        <button id="btn-extract" onclick="extractVideos()"
+                class="bg-blue-600 hover:bg-blue-700 px-5 py-2.5 rounded-lg font-medium whitespace-nowrap">
+          提取视频
+        </button>
+      </div>
+
+      <!-- 加载状态 -->
+      <div id="loading" class="hidden text-center py-8 text-gray-400">正在分析页面...</div>
+
+      <!-- 错误提示 -->
+      <div id="error" class="hidden bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4"></div>
+
+      <!-- 视频列表 -->
+      <div id="video-list" class="space-y-3"></div>
+
+      <!-- 下载任务 -->
+      <div id="task-list" class="mt-6 space-y-3"></div>
+
+      <!-- 更新区域 -->
+      <div id="update-area" class="mt-8 border-t border-gray-700 pt-4 hidden">
+        <div class="flex items-center justify-between">
+          <div>
+            <span class="text-sm text-gray-400">发现新版本: </span>
+            <span id="update-latest" class="text-sm text-blue-400 font-medium"></span>
+            <p id="update-notes" class="text-xs text-gray-500 mt-1 max-w-md"></p>
+          </div>
+          <button id="btn-update" onclick="doUpdate()"
+                  class="bg-yellow-600 hover:bg-yellow-700 px-4 py-2 rounded-lg text-sm font-medium">
+            立即更新
+          </button>
+        </div>
+        <div id="update-progress-area" class="hidden mt-3">
+          <div class="progress-bar">
+            <div id="update-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
+          <div id="update-msg" class="text-xs text-gray-500 mt-1"></div>
+        </div>
+      </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
