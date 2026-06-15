@@ -60,14 +60,28 @@
 - [ ] 百度直链 `auth_key` 有时效，过期后历史里的「下载文件」链接会失效
 - [ ] `channels_dl.py` 视频号解析模块未接入 Web UI
 
-## v1.2.0 — 规划中
+## v1.2.0 — (2026-06-15)
+
+### 已完成
+
+- [x] 视频转 MP3
+  - [x] 新增 `modules/audio_extract.py`，ffmpeg + libmp3lame，默认 192 kbps
+  - [x] multipart 文件上传，落 `downloads/_uploads/`，转换后自动清理
+  - [x] `ffprobe` 拿时长 + `ffmpeg -progress` 解析实时进度
+  - [x] 输出 `downloads/audio/`，独立 `history.json` 持久化
+  - [x] 新增「音频提取」tab，文件选择 + 转换 + 进度卡片 + MP3 下载链接
+  - [x] PyInstaller 打包模式下自动把 exe 同目录加入 PATH，让捆绑的 ffmpeg.exe 可被发现
+  - [x] 完成任务提供「打开所在目录」按钮，跨平台调用系统文件管理器高亮选中文件，替代原浏览器下载链
+
+## v1.3.0 — 规划中
 
 ### 计划功能
 
-- [ ] 音频提取模块
 - [ ] 格式转换模块
 - [ ] Nuitka 替代 PyInstaller 打包
 - [ ] 视频号解析接入 Web UI（依赖 Cookie）
+- [ ] 音频码率/采样率选项（当前固定 192 kbps）
+- [ ] 音频格式扩展（wav / aac）
 
 ## 版本号规则
 

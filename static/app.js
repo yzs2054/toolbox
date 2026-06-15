@@ -114,8 +114,8 @@ function taskCardHtml(task) {
     : task.status === 'error' ? '#ef4444' : '';
   const progress = task.progress != null ? task.progress : 0;
   const fileLink = (task.status === 'done' && task.output_file)
-    ? `<a href="/downloads/${encodeURIComponent(task.output_file)}" download
-        class="text-blue-400 hover:underline text-xs">下载文件: ${escapeHtml(task.output_file)}</a>`
+    ? `<button onclick="revealFile('video', '${escapeHtml(task.id)}')"
+        class="text-blue-400 hover:underline text-xs">打开所在目录</button>`
     : '';
 
   return `
@@ -133,8 +133,8 @@ function taskCardHtml(task) {
     <div class="progress-bar">
       <div class="progress-fill" style="width: ${progress}%; ${fillBg ? 'background:' + fillBg : ''}"></div>
     </div>
-    <div class="task-msg text-xs text-gray-500 mt-1">
-      ${escapeHtml(task.message || '')}
+    <div class="task-msg text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
+      <span class="truncate flex-1 min-w-0">${escapeHtml(task.message || '')}</span>
       ${fileLink}
     </div>
   `;
@@ -279,3 +279,163 @@ function pollUpdate() {
 // 页面加载后检查更新
 checkForUpdate();
 loadTasks();
+loadAudioTasks();
+
+// ========== 音频提取 ==========
+
+const audioPollTimers = {};
+
+function onAudioFilePicked() {
+  const f = $('audio-file').files[0];
+  $('audio-file-name').textContent = f ? f.name : '未选择';
+  $('btn-audio-convert').disabled = !f;
+}
+
+async function uploadAndConvert() {
+  const f = $('audio-file').files[0];
+  if (!f) return;
+  $('audio-error').classList.add('hidden');
+  $('btn-audio-convert').disabled = true;
+  $('btn-audio-convert').textContent = '上传中...';
+
+  const fd = new FormData();
+  fd.append('file', f);
+
+  try {
+    const resp = await fetch('/api/audio/upload', { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (data.error) {
+      showAudioError(data.error);
+      return;
+    }
+    ensureAudioTaskCard(data.task_id, f.name);
+    startAudioPolling(data.task_id);
+    // 重置选择，允许立即转下一个
+    $('audio-file').value = '';
+    onAudioFilePicked();
+  } catch (e) {
+    showAudioError('上传失败: ' + e.message);
+  } finally {
+    $('btn-audio-convert').disabled = false;
+    $('btn-audio-convert').textContent = '开始转换';
+  }
+}
+
+function showAudioError(msg) {
+  $('audio-error').textContent = msg;
+  $('audio-error').classList.remove('hidden');
+}
+
+async function revealFile(kind, taskId) {
+  try {
+    const resp = await fetch('/api/file/reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, id: taskId }),
+    });
+    const data = await resp.json();
+    if (data.error) alert(data.error);
+  } catch (e) {
+    alert('调用失败: ' + e.message);
+  }
+}
+
+function audioTaskCardHtml(task) {
+  const source = task.source_name || '未命名';
+  const started = task.started_at ? formatTime(task.started_at) : '';
+  const statusText = task.status === 'done' ? '完成'
+    : task.status === 'error' ? '失败'
+    : (task.progress != null ? task.progress + '%' : '排队中');
+  const statusColor = task.status === 'done' ? 'text-green-400'
+    : task.status === 'error' ? 'text-red-400' : 'text-blue-400';
+  const fillBg = task.status === 'done' ? '#22c55e'
+    : task.status === 'error' ? '#ef4444' : '';
+  const progress = task.progress != null ? task.progress : 0;
+  const fileLink = (task.status === 'done' && task.output_file)
+    ? `<button onclick="revealFile('audio', '${escapeHtml(task.id)}')"
+        class="text-blue-400 hover:underline text-xs">打开所在目录</button>`
+    : '';
+
+  return `
+    <div class="flex items-center justify-between gap-3 mb-2">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-medium text-gray-200 truncate">${escapeHtml(source)}</span>
+          <span class="bg-purple-900/60 text-purple-300 border border-purple-700 px-1.5 py-0.5 rounded text-xs">MP3</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5">${escapeHtml(started)}</div>
+      </div>
+      <span class="text-xs ${statusColor} whitespace-nowrap shrink-0">${statusText}</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" style="width: ${progress}%; ${fillBg ? 'background:' + fillBg : ''}"></div>
+    </div>
+    <div class="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
+      <span class="truncate flex-1 min-w-0">${escapeHtml(task.message || '')}</span>
+      ${fileLink}
+    </div>
+  `;
+}
+
+function ensureAudioTaskCard(taskId, sourceName) {
+  $('audio-task-area').classList.remove('hidden');
+  let card = $('audio-task-' + taskId);
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'audio-task-' + taskId;
+    card.className = 'bg-gray-800 border border-gray-700 rounded-lg p-4';
+    card.innerHTML = audioTaskCardHtml({
+      status: 'downloading',
+      progress: 0,
+      source_name: sourceName,
+      started_at: Date.now() / 1000,
+    });
+    $('audio-task-list').prepend(card);
+  }
+  return card;
+}
+
+async function loadAudioTasks() {
+  try {
+    const resp = await fetch('/api/audio/tasks');
+    const data = await resp.json();
+    const tasks = data.tasks || [];
+    if (tasks.length === 0) {
+      $('audio-task-area').classList.add('hidden');
+      $('audio-task-list').innerHTML = '';
+      return;
+    }
+    $('audio-task-area').classList.remove('hidden');
+    const list = $('audio-task-list');
+    list.innerHTML = '';
+    tasks.forEach(t => {
+      const card = document.createElement('div');
+      card.id = 'audio-task-' + t.id;
+      card.className = 'bg-gray-800 border border-gray-700 rounded-lg p-4';
+      card.innerHTML = audioTaskCardHtml(t);
+      list.appendChild(card);
+      if (t.status === 'downloading') startAudioPolling(t.id);
+    });
+  } catch (e) {
+    // 静默
+  }
+}
+
+function startAudioPolling(taskId) {
+  if (audioPollTimers[taskId]) return;
+  const poll = async () => {
+    const resp = await fetch('/api/audio/tasks?id=' + taskId);
+    const task = await resp.json();
+    const card = $('audio-task-' + taskId);
+    if (!card) { delete audioPollTimers[taskId]; return; }
+
+    card.innerHTML = audioTaskCardHtml(task);
+
+    if (task.status === 'downloading') {
+      audioPollTimers[taskId] = setTimeout(poll, 1000);
+    } else {
+      delete audioPollTimers[taskId];
+    }
+  };
+  poll();
+}

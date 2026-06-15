@@ -20,6 +20,7 @@ toolbox/
 ├── modules/
 │   ├── __init__.py
 │   ├── video_dl.py           # 视频提取与下载 + 任务历史
+│   ├── audio_extract.py      # 视频转 MP3 + 任务历史
 │   ├── channels_dl.py        # 视频号解析（依赖 Cookie，未接入 Web）
 │   └── updater.py            # 自动更新
 ├── templates/
@@ -28,7 +29,10 @@ toolbox/
 │   ├── style.css             # 样式
 │   └── app.js                # 前端逻辑
 ├── downloads/                # 下载文件存放
-│   └── history.json          # 任务历史索引（自动生成）
+│   ├── history.json          # 视频任务历史索引（自动生成）
+│   ├── _uploads/             # 音频转换临时上传目录（自动清理）
+│   └── audio/
+│       └── history.json      # 音频转换历史索引（自动生成）
 ├── docs/                     # 项目文档
 └── .github/workflows/
     └── build.yml             # CI/CD 构建配置
@@ -49,6 +53,14 @@ toolbox/
 | `/api/video/download` | POST | 开始下载任务（异步） |
 | `/api/video/tasks` | GET | 查询下载任务状态 |
 
+### 音频提取
+
+| 接口 | 方法 | 说明 |
+|---|---|---|
+| `/api/audio/upload` | POST | 上传视频文件，启动 MP3 转换（multipart） |
+| `/api/audio/tasks` | GET | 查询转换任务状态（支持 `?id=`） |
+| `/downloads/audio/<filename>` | GET | 下载转换后的 MP3 文件 |
+
 ### 自动更新
 
 | 接口 | 方法 | 说明 |
@@ -62,6 +74,17 @@ toolbox/
 | 接口 | 方法 | 说明 |
 |---|---|---|
 | `/downloads/<filename>` | GET | 下载已完成的文件 |
+| `/downloads/audio/<filename>` | GET | 下载转换后的 MP3 |
+| `/api/file/reveal` | POST | 在系统文件管理器中打开并选中文件（跨平台） |
+
+**`/api/file/reveal`** 仅供本地用户使用 —— 文件已在 `downloads/` 下，
+没必要再走浏览器下载。请求体 `{"kind": "video"\|"audio", "id": "<task_id>"}`，
+后端按 task_id 反查 `output_file` 后调用：
+- Windows: `explorer /select,"<path>"`
+- macOS: `open -R <path>`
+- Linux: `xdg-open <父目录>`
+
+路径必须解析后仍位于 `DOWNLOAD_DIR` 或 `AUDIO_DIR` 之内，否则拒绝。
 
 ## 核心模块设计
 
@@ -96,6 +119,21 @@ toolbox/
 - 模块导入时 `_load_history()` 自动恢复历史任务
 - 最多保留 200 条，超出按 `started_at` 倒序裁剪
 - `output_file` 来源：yt-dlp `progress_hooks` 的 `finished` 事件 / `_run_direct` 的本地路径
+
+### audio_extract.py — 视频转 MP3
+
+**流程**：
+
+1. Flask 接收 multipart 上传 → 落到 `downloads/_uploads/<uuid>.<ext>`
+2. 启动后台线程，调用 `ffprobe` 拿视频时长（秒）
+3. 调用 `ffmpeg -nostats -progress pipe:1 -i in -vn -acodec libmp3lame -b:a 192k out.mp3`
+4. 解析 `out_time_ms` 进度行，结合时长实时更新进度百分比
+5. 成功后输出到 `downloads/audio/<basename>.mp3`，删除临时上传文件
+6. 任务持久化到 `downloads/audio/history.json`（结构与 video_dl 一致）
+
+任务字段：`id / status / progress / message / source_name / output_file / started_at / finished_at / duration_sec`
+
+固定参数：192 kbps MP3，初版不暴露码率/采样率选项。
 
 ### updater.py — 自动更新
 
