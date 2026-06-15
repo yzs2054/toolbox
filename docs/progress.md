@@ -79,15 +79,38 @@
   - [x] 功能列表卡片，点「前往」直接切到对应 tab
   - [x] 把更新 UI 从视频 tab 挪到系统 tab，状态更明确（已是最新 / 发现新版 / 检查失败带重试）
 
-## v1.3.0 — 规划中
+## v1.3.0 — (2026-06-15)
+
+### 已完成
+
+- [x] 视频转码
+  - [x] 新增 `modules/video_transcode.py`，支持 H.264 / H.265 / VP9 三种编码
+  - [x] 分辨率缩放选项：保持原分辨率 / 1080p / 720p / 480p（`-vf scale=-2:HEIGHT`）
+  - [x] 质量档位：高质 CRF 18 / 平衡 CRF 23 / 压缩 CRF 28
+  - [x] `ffprobe` 拿时长 + `ffmpeg -progress` 解析实时进度
+  - [x] 输出 `downloads/video_transcode/`，独立 `history.json` 持久化
+  - [x] 新增「视频转码」tab，文件选择 + 编码/分辨率/质量三联下拉 + 进度卡片
+  - [x] `/api/file/reveal` 扩展支持 `kind="video_transcode"`
+
+- [x] Windows 打包版本号修复
+  - [x] PyInstaller 加 `--add-data "version.txt;."` 把版本文件捆进 exe
+  - [x] `updater.get_current_version()` 在 `sys.frozen` 时改用 `sys._MEIPASS` 解析路径
+  - [x] 修复 Windows 下版本号始终为 `v0.0.0` 的问题
+
+- [x] 更新检查健壮性
+  - [x] 加 `_parse_version()` 语义化版本比较，避免字符串字典序误判
+  - [x] GitHub Release `body` 字段为 `null` 时兜底为空字符串
+
+## v1.4.0 — 规划中
 
 ### 计划功能
 
-- [ ] 格式转换模块
 - [ ] Nuitka 替代 PyInstaller 打包
 - [ ] 视频号解析接入 Web UI（依赖 Cookie）
 - [ ] 音频码率/采样率选项（当前固定 192 kbps）
 - [ ] 音频格式扩展（wav / aac）
+- [ ] 视频转码硬件加速（NVENC / VideoToolbox）
+- [ ] 视频截取（指定起止时间）
 
 ## 版本号规则
 

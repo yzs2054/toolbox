@@ -22,9 +22,12 @@ _progress = {"status": "idle", "progress": 0, "message": ""}
 
 
 def get_current_version() -> str:
-    version_file = Path(__file__).parent.parent / "version.txt"
+    # PyInstaller onefile 模式下，bundled 文件解到 sys._MEIPASS；
+    # 开发模式下用源码树根目录。
+    base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).parent.parent
+    version_file = base / "version.txt"
     if version_file.exists():
-        return version_file.read_text().strip()
+        return version_file.read_text(encoding="utf-8").strip()
     return "v0.0.0"
 
 

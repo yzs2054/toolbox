@@ -10,6 +10,7 @@ import yt_dlp
 
 from . import video_dl
 from . import audio_extract
+from . import video_transcode
 from . import updater
 
 
@@ -68,6 +69,7 @@ def collect() -> dict:
 
     downloads_stat = _dir_stats(video_dl.DOWNLOAD_DIR)
     audio_stat = _dir_stats(audio_extract.AUDIO_DIR)
+    transcode_stat = _dir_stats(video_transcode.TRANSCODE_DIR)
     try:
         du = shutil.disk_usage(video_dl.DOWNLOAD_DIR.resolve())
         disk = {"free_bytes": du.free, "total_bytes": du.total}
@@ -84,6 +86,7 @@ def collect() -> dict:
         "storage": {
             "downloads": {**downloads_stat, "size_human": _human_bytes(downloads_stat["size_bytes"])},
             "audio": {**audio_stat, "size_human": _human_bytes(audio_stat["size_bytes"])},
+            "transcode": {**transcode_stat, "size_human": _human_bytes(transcode_stat["size_bytes"])},
             "disk_free_human": _human_bytes(disk["free_bytes"]),
             "disk_total_human": _human_bytes(disk["total_bytes"]),
             "disk_free_bytes": disk["free_bytes"],
@@ -99,6 +102,11 @@ def collect() -> dict:
                 "name": "音频提取",
                 "tab": "audio",
                 "desc": "上传视频文件，转 192 kbps MP3",
+            },
+            {
+                "name": "视频转码",
+                "tab": "transcode",
+                "desc": "H.264 / H.265 / VP9，可选分辨率与质量档位",
             },
         ],
     }

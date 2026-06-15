@@ -41,6 +41,7 @@ jobs:
           pyinstaller --onefile `
             --add-data "templates;templates" `
             --add-data "static;static" `
+            --add-data "version.txt;." `
             --name toolbox `
             app.py
 

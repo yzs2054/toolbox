@@ -21,6 +21,7 @@ toolbox/
 │   ├── __init__.py
 │   ├── video_dl.py           # 视频提取与下载 + 任务历史
 │   ├── audio_extract.py      # 视频转 MP3 + 任务历史
+│   ├── video_transcode.py    # 视频转码（H.264/H.265/VP9）+ 任务历史
 │   ├── system_info.py        # 系统信息收集
 │   ├── channels_dl.py        # 视频号解析（依赖 Cookie，未接入 Web）
 │   └── updater.py            # 自动更新
@@ -31,9 +32,11 @@ toolbox/
 │   └── app.js                # 前端逻辑
 ├── downloads/                # 下载文件存放
 │   ├── history.json          # 视频任务历史索引（自动生成）
-│   ├── _uploads/             # 音频转换临时上传目录（自动清理）
-│   └── audio/
-│       └── history.json      # 音频转换历史索引（自动生成）
+│   ├── _uploads/             # 上传临时目录（自动清理）
+│   ├── audio/
+│   │   └── history.json      # 音频转换历史索引（自动生成）
+│   └── video_transcode/
+│       └── history.json      # 视频转码历史索引（自动生成）
 ├── docs/                     # 项目文档
 └── .github/workflows/
     └── build.yml             # CI/CD 构建配置
@@ -62,6 +65,14 @@ toolbox/
 | `/api/audio/tasks` | GET | 查询转换任务状态（支持 `?id=`） |
 | `/downloads/audio/<filename>` | GET | 下载转换后的 MP3 文件 |
 
+### 视频转码
+
+| 接口 | 方法 | 说明 |
+|---|---|---|
+| `/api/video_transcode/upload` | POST | 上传视频文件，启动转码（multipart，附带 codec/quality/resolution） |
+| `/api/video_transcode/tasks` | GET | 查询转码任务状态（支持 `?id=`） |
+| `/downloads/video_transcode/<filename>` | GET | 下载转码后的视频文件 |
+
 ### 自动更新
 
 | 接口 | 方法 | 说明 |
@@ -82,16 +93,17 @@ toolbox/
 |---|---|---|
 | `/downloads/<filename>` | GET | 下载已完成的文件 |
 | `/downloads/audio/<filename>` | GET | 下载转换后的 MP3 |
+| `/downloads/video_transcode/<filename>` | GET | 下载转码后的视频 |
 | `/api/file/reveal` | POST | 在系统文件管理器中打开并选中文件（跨平台） |
 
 **`/api/file/reveal`** 仅供本地用户使用 —— 文件已在 `downloads/` 下，
-没必要再走浏览器下载。请求体 `{"kind": "video"\|"audio", "id": "<task_id>"}`，
+没必要再走浏览器下载。请求体 `{"kind": "video"\|"audio"\|"video_transcode", "id": "<task_id>"}`，
 后端按 task_id 反查 `output_file` 后调用：
 - Windows: `explorer /select,"<path>"`
 - macOS: `open -R <path>`
 - Linux: `xdg-open <父目录>`
 
-路径必须解析后仍位于 `DOWNLOAD_DIR` 或 `AUDIO_DIR` 之内，否则拒绝。
+路径必须解析后仍位于对应模块的 `DOWNLOAD_DIR` / `AUDIO_DIR` / `TRANSCODE_DIR` 之内，否则拒绝。
 
 ## 核心模块设计
 
@@ -142,12 +154,33 @@ toolbox/
 
 固定参数：192 kbps MP3，初版不暴露码率/采样率选项。
 
+### video_transcode.py — 视频转码
+
+**流程**：
+
+1. Flask 接收 multipart 上传（含 `codec` / `quality` / `resolution` 表单字段）→ 落 `downloads/_uploads/<uuid>.<ext>`
+2. 启动后台线程，调用 `ffprobe` 拿时长（秒）
+3. 按 codec 构造 ffmpeg 命令：
+   - `h264`: `libx264` + `-crf N -preset medium`，输出 `.mp4`，音频 `aac 128k`
+   - `h265`: `libx265` + `-crf N -preset medium`，输出 `.mp4`，音频 `aac 128k`
+   - `vp9`:  `libvpx-vp9` + `-crf N -b:v 0`，输出 `.webm`，音频 `libopus 128k`
+4. 按 resolution 加 `-vf scale=-2:HEIGHT`（保持宽高比，宽度自动），`source` 时跳过
+5. 解析 `out_time_ms` 进度行，结合时长实时更新进度百分比
+6. 成功后输出到 `downloads/video_transcode/<stem>.<codec><ext>`，删除临时上传文件
+7. 任务持久化到 `downloads/video_transcode/history.json`（结构与 video_dl 一致）
+
+**质量档位 → CRF**：`high=18` / `balanced=23` / `compressed=28`
+
+**输出命名示例**：`八段锦.h264.mp4` / `八段锦.h265.mp4` / `八段锦.vp9.webm`
+
+任务字段：`id / status / progress / message / source_name / output_file / codec / quality / quality_label / resolution / started_at / finished_at / duration_sec`
+
 ### system_info.py — 系统信息收集
 
 `collect()` 聚合：
 - **OS**: `platform.system / release / machine / processor / python_version / cpu_count`
 - **工具版本**: ffmpeg（`ffmpeg -version` 解析首行）、yt-dlp（`yt_dlp.version.__version__`）
-- **存储**: 递归统计 `downloads/` 与 `downloads/audio/` 文件数与字节数；`shutil.disk_usage` 拿磁盘剩余
+- **存储**: 递归统计 `downloads/`、`downloads/audio/`、`downloads/video_transcode/` 文件数与字节数；`shutil.disk_usage` 拿磁盘剩余
 - **功能列表**: 静态硬编码，每个功能带 `name / tab / desc`，前端可点「前往」切换 tab
 
 纯只读，无状态、无副作用。
@@ -160,8 +193,18 @@ toolbox/
 4. 下载 zip → 解压到 `_update` 目录 → 生成更新脚本
 5. 用户重启后自动替换文件
 
+**版本读取的两种路径**：
+- 开发态：`version.txt` 与 `app.py` 同目录
+- 打包态：PyInstaller 已把 `version.txt` 通过 `--add-data "version.txt;."` 捆绑到
+  `_MEIPASS` 临时解压目录，需用 `sys._MEIPASS / version.txt` 才能拿到，否则 Windows
+  打包后始终显示 `v0.0.0`
+
+**版本比较**：解析 `vX.Y.Z` 拆成 `(major, minor, patch)` 元组逐段比较，
+避免字符串 `"v1.1.0" > "v1.0.0"` 这类基于字典序的误判。
+
 **注意**：GitHub API 失败时（如仓库尚无 release 返回 404），兜底响应中
 仍带 `current` 字段，避免前端显示 `当前版本: undefined`。
+GitHub Release `body` 字段可能为 `null`，统一用 `(release.get("body") or "")[:500]` 兜底。
 
 ## 发版流程
 

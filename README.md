@@ -1,6 +1,6 @@
 # 多功能工具箱
 
-本地运行的 Web 工具箱，浏览器操作。目前包含视频下载、视频转 MP3、系统信息三个功能模块，后续持续迭代。
+本地运行的 Web 工具箱，浏览器操作。目前包含视频下载、视频转 MP3、视频转码、系统信息四个功能模块，后续持续迭代。
 
 ## 功能
 
@@ -8,10 +8,11 @@
 |------------|-----------------------------------------------------------------------------------------------------------------------------------------|
 | 视频下载   | 从网页提取视频并下载，支持微信公众号（腾讯视频 iframe）、百度新闻视频（好看视频侧拉直链）、mpvideo 直链、HTML5 `<video>`、mp4/m3u8 直链 |
 | 视频转 MP3 | 上传视频文件，ffmpeg 转 192 kbps MP3，带进度条                                                                                          |
+| 视频转码   | 上传视频文件，转 H.264 / H.265 / VP9，可选分辨率（1080p/720p/480p）与质量档位（CRF 18/23/28）                                           |
 | 系统信息   | 显示 OS / Python / CPU / ffmpeg / yt-dlp 版本 / 存储用量 / 功能列表 / 软件更新                                                          |
 
 特性：
-- 任务历史持久化（`downloads/history.json`、`downloads/audio/history.json`），跨重启保留
+- 任务历史持久化（`downloads/history.json`、`downloads/audio/history.json`、`downloads/video_transcode/history.json`），跨重启保留
 - 完成的文件可直接调起系统文件管理器高亮选中（Win `explorer /select,` / macOS `open -R` / Linux `xdg-open`）
 - 软件自动更新（依赖 GitHub Releases，**仓库需公开**）
 
@@ -58,12 +59,20 @@ PORT=8090 python app.py
 3. 点「开始转换」，ffmpeg 自动转码为 192 kbps MP3
 4. 完成后点「打开所在目录」获取文件
 
+### 视频转码
+
+1. 切到「视频转码」tab
+2. 选择本地视频文件
+3. 选输出格式（H.264 / H.265 / VP9）、分辨率（保持原分辨率 / 1080p / 720p / 480p）、质量（高质 / 平衡 / 压缩）
+4. 点「开始转码」，ffmpeg 实时进度
+5. 完成后点「打开所在目录」获取文件
+
 ### 系统信息
 
 切到「系统」tab，可查看：
 - 操作系统 / 架构 / CPU 核数 / Python 版本
 - 应用版本 / ffmpeg / yt-dlp 版本
-- 下载目录与音频目录的文件数和总大小、磁盘剩余空间
+- 下载目录、音频目录、转码目录的文件数和总大小、磁盘剩余空间
 - 功能列表（点「前往」直接切到对应 tab）
 - 软件更新（点「检查更新」，有新版才会出现「立即更新」按钮）
 
@@ -77,6 +86,7 @@ PORT=8090 python app.py
 ├── modules/
 │   ├── video_dl.py         # 视频提取与下载
 │   ├── audio_extract.py    # 视频转 MP3
+│   ├── video_transcode.py  # 视频转码
 │   ├── system_info.py      # 系统信息收集
 │   ├── updater.py          # 自动更新
 │   └── channels_dl.py      # 视频号解析（未接入 Web UI）
@@ -109,7 +119,7 @@ git push --tags
 - 后端：Python + Flask
 - 前端：HTML + Tailwind CSS（CDN）+ 原生 JS
 - 视频下载：yt-dlp（Python 库调用）
-- 音频转码：ffmpeg + libmp3lame
+- 音视频转码：ffmpeg（libx264 / libx265 / libvpx-vp9 / libmp3lame / libopus）
 - 打包：PyInstaller
 - CI/CD：GitHub Actions
 
@@ -118,4 +128,5 @@ git push --tags
 - PyInstaller 打的 exe 在 Windows Defender 下偶有误报，计划换 Nuitka
 - 视频号解析模块 `channels_dl.py` 依赖 Cookie，尚未接入 Web UI
 - 音频码率固定 192 kbps，未暴露选项
+- 视频转码未启用硬件加速（NVENC / VideoToolbox）
 - 百度视频直链 `auth_key` 有时效，过期的历史链接无法继续下载

@@ -18,6 +18,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from modules import video_dl
 from modules import audio_extract
+from modules import video_transcode
 from modules import system_info
 from modules import updater
 
@@ -109,20 +110,51 @@ def serve_audio(filename):
     return send_from_directory(audio_extract.AUDIO_DIR, filename, as_attachment=True)
 
 
+@app.route("/api/video_transcode/upload", methods=["POST"])
+def api_video_transcode_upload():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"error": "未收到文件"}), 400
+    codec = (request.form.get("codec") or "h264").strip()
+    quality = (request.form.get("quality") or "balanced").strip()
+    resolution = (request.form.get("resolution") or "source").strip()
+    task_id = video_transcode.start_task(f, codec, quality, resolution)
+    return jsonify({"task_id": task_id})
+
+
+@app.route("/api/video_transcode/tasks", methods=["GET"])
+def api_video_transcode_tasks():
+    task_id = request.args.get("id")
+    if task_id:
+        task = video_transcode.get_task(task_id)
+        if not task:
+            return jsonify({"error": "任务不存在"}), 404
+        return jsonify(task)
+    return jsonify({"tasks": video_transcode.list_tasks()})
+
+
+@app.route("/downloads/video_transcode/<path:filename>")
+def serve_video_transcode(filename):
+    return send_from_directory(video_transcode.TRANSCODE_DIR, filename, as_attachment=True)
+
+
 @app.route("/api/file/reveal", methods=["POST"])
 def api_file_reveal():
     data = request.get_json(force=True)
     kind = data.get("kind")
     task_id = data.get("id")
-    if kind not in ("video", "audio") or not task_id:
+    if kind not in ("video", "audio", "video_transcode") or not task_id:
         return jsonify({"error": "参数缺失"}), 400
 
     if kind == "video":
         task = video_dl.get_task(task_id)
         base_dir = video_dl.DOWNLOAD_DIR
-    else:
+    elif kind == "audio":
         task = audio_extract.get_task(task_id)
         base_dir = audio_extract.AUDIO_DIR
+    else:
+        task = video_transcode.get_task(task_id)
+        base_dir = video_transcode.TRANSCODE_DIR
 
     if not task or not task.get("output_file"):
         return jsonify({"error": "任务或文件不存在"}), 404
