@@ -217,33 +217,85 @@ $('url-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') extractVideos();
 });
 
-// ========== 自动更新 ==========
+// ========== 软件更新 ==========
 
 let _updateUrl = '';
+let _currentVersion = '';
+
+function renderUpdateInitial() {
+  const box = $('update-status');
+  if (!box) return;
+  if (_currentVersion) {
+    box.innerHTML = `
+      <div class="flex items-center justify-between gap-3">
+        <div class="text-sm text-gray-300">当前版本: <span class="font-medium">${escapeHtml(_currentVersion)}</span></div>
+        <button onclick="checkForUpdate()" class="bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-xs font-medium">检查更新</button>
+      </div>`;
+  } else {
+    box.innerHTML = `<div class="text-sm text-gray-500">读取版本中...</div>`;
+  }
+}
 
 async function checkForUpdate() {
+  const box = $('update-status');
+  if (box) box.innerHTML = `
+    <div class="flex items-center justify-between gap-3">
+      <div class="text-sm text-gray-400">正在检查更新...</div>
+      <button disabled class="bg-gray-700 px-3 py-1.5 rounded-lg text-xs font-medium opacity-50 cursor-not-allowed">检查更新</button>
+    </div>`;
   try {
     const resp = await fetch('/api/update/check');
     const data = await resp.json();
+    _currentVersion = data.current || _currentVersion;
 
-    $('version').textContent = '当前版本: ' + data.current;
+    if (data.error) {
+      if (box) box.innerHTML = `
+        <div class="flex items-center justify-between gap-3">
+          <div class="text-sm min-w-0">
+            <div class="text-gray-300">当前版本: <span class="font-medium">${escapeHtml(_currentVersion)}</span></div>
+            <div class="text-xs text-red-400 mt-1">检查失败: ${escapeHtml(data.error)}</div>
+          </div>
+          <button onclick="checkForUpdate()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium">重试</button>
+        </div>`;
+      return;
+    }
 
     if (data.has_update && data.download_url) {
       _updateUrl = data.download_url;
-      $('update-latest').textContent = data.latest;
-      $('update-notes').textContent = data.notes || '';
-      $('update-area').classList.remove('hidden');
+      if (box) box.innerHTML = `
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div class="text-sm min-w-0 flex-1">
+            <div class="text-gray-300">
+              发现新版本:
+              <span class="text-gray-500 mx-1">${escapeHtml(_currentVersion)}</span>
+              <span class="mx-1 text-gray-600">→</span>
+              <span class="text-blue-400 font-medium">${escapeHtml(data.latest)}</span>
+            </div>
+            ${data.notes ? `<div class="text-xs text-gray-500 mt-2 max-w-md whitespace-pre-wrap">${escapeHtml(data.notes)}</div>` : ''}
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <button onclick="renderUpdateInitial()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium">取消</button>
+            <button onclick="doUpdate()"
+                    class="bg-yellow-600 hover:bg-yellow-700 px-4 py-1.5 rounded-lg text-xs font-medium">
+              立即更新
+            </button>
+          </div>
+        </div>`;
+    } else {
+      _updateUrl = '';
+      if (box) box.innerHTML = `
+        <div class="flex items-center justify-between gap-3">
+          <div class="text-sm text-gray-300">已是最新版本 <span class="font-medium">${escapeHtml(_currentVersion)}</span></div>
+          <button onclick="checkForUpdate()" class="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg text-xs font-medium">再检查一次</button>
+        </div>`;
     }
   } catch (e) {
-    // 静默失败，不影响使用
-    console.warn('检查更新失败:', e);
+    if (box) box.innerHTML = `<div class="text-sm text-red-400">检查失败: ${escapeHtml(e.message)}</div>`;
   }
 }
 
 async function doUpdate() {
   if (!_updateUrl) return;
-  $('btn-update').disabled = true;
-  $('btn-update').textContent = '更新中...';
   $('update-progress-area').classList.remove('hidden');
 
   await fetch('/api/update/start', {
@@ -263,23 +315,111 @@ function pollUpdate() {
       $('update-msg').textContent = data.message;
 
       if (data.status === 'ready') {
-        $('btn-update').textContent = '重启后生效';
-        $('btn-update').className = 'bg-green-600 px-4 py-2 rounded-lg text-sm font-medium';
+        $('update-msg').textContent = '更新已就绪，重启后生效';
         return;
       }
       if (data.status === 'error') {
-        $('btn-update').textContent = '更新失败';
-        $('btn-update').className = 'bg-red-600 px-4 py-2 rounded-lg text-sm font-medium';
+        $('update-msg').textContent = '更新失败: ' + (data.message || '');
         return;
       }
       setTimeout(pollUpdate, 1000);
     });
 }
 
-// 页面加载后检查更新
-checkForUpdate();
+// ========== 系统信息 ==========
+
+async function loadSystemInfo() {
+  const box = $('system-info');
+  try {
+    const resp = await fetch('/api/system/info');
+    const data = await resp.json();
+    if (data.app_version) {
+      _currentVersion = data.app_version;
+      $('version').textContent = '当前版本: ' + _currentVersion;
+      renderUpdateInitial();
+    }
+    box.innerHTML = renderSystemInfo(data);
+  } catch (e) {
+    box.innerHTML = `<div class="text-red-400 text-sm">加载失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function infoRow(label, value) {
+  return `
+    <div class="flex items-center justify-between py-1.5">
+      <span class="text-gray-500">${escapeHtml(label)}</span>
+      <span class="text-gray-200 font-mono text-xs text-right">${escapeHtml(value)}</span>
+    </div>`;
+}
+
+function infoCard(title, rowsHtml) {
+  return `
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">${escapeHtml(title)}</div>
+      <div class="divide-y divide-gray-700/50">${rowsHtml}</div>
+    </div>`;
+}
+
+function renderSystemInfo(data) {
+  const os = data.os || {};
+  const tools = data.tools || {};
+  const st = data.storage || {};
+  const features = data.features || [];
+
+  const osCard = infoCard('操作系统', `
+    ${infoRow('系统', `${os.system} ${os.release}`)}
+    ${infoRow('架构', os.machine || '-')}
+    ${infoRow('CPU', `${os.processor || '-'} (${os.cpu_count || 0} 核)`)}
+    ${infoRow('Python', os.python || '-')}
+  `);
+
+  const toolsCard = infoCard('工具版本', `
+    ${infoRow('应用版本', _currentVersion || '-')}
+    ${infoRow('ffmpeg', tools.ffmpeg || '-')}
+    ${infoRow('yt-dlp', tools.yt_dlp || '-')}
+  `);
+
+  const dl = st.downloads || {};
+  const au = st.audio || {};
+  const storageCard = infoCard('存储', `
+    ${infoRow('下载目录', `${dl.size_human || '0 B'} / ${dl.file_count || 0} 文件`)}
+    ${infoRow('音频目录', `${au.size_human || '0 B'} / ${au.file_count || 0} 文件`)}
+    ${infoRow('磁盘剩余', `${st.disk_free_human || '-'} / ${st.disk_total_human || '-'}`)}
+  `);
+
+  const featuresHtml = features.map(f => `
+    <div class="bg-gray-800 border border-gray-700 rounded-lg p-4">
+      <div class="flex items-center justify-between gap-3 mb-1">
+        <span class="text-sm font-medium text-gray-200">${escapeHtml(f.name)}</span>
+        <button onclick="switchTab('${escapeHtml(f.tab)}')"
+                class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-xs font-medium">前往</button>
+      </div>
+      <div class="text-xs text-gray-500">${escapeHtml(f.desc)}</div>
+    </div>`).join('');
+
+  return `
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      ${osCard}
+      ${toolsCard}
+    </div>
+    <div>${storageCard}</div>
+    <div>
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 mt-5">功能</div>
+      <div class="space-y-2">${featuresHtml}</div>
+    </div>
+  `;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.dataset.tab === name) b.click();
+  });
+}
+
+// 页面加载后
 loadTasks();
 loadAudioTasks();
+loadSystemInfo();
 
 // ========== 音频提取 ==========
 

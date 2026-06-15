@@ -21,6 +21,7 @@ toolbox/
 │   ├── __init__.py
 │   ├── video_dl.py           # 视频提取与下载 + 任务历史
 │   ├── audio_extract.py      # 视频转 MP3 + 任务历史
+│   ├── system_info.py        # 系统信息收集
 │   ├── channels_dl.py        # 视频号解析（依赖 Cookie，未接入 Web）
 │   └── updater.py            # 自动更新
 ├── templates/
@@ -68,6 +69,12 @@ toolbox/
 | `/api/update/check` | GET | 检查 GitHub Releases 是否有新版本 |
 | `/api/update/start` | POST | 开始下载更新包 |
 | `/api/update/progress` | GET | 查询更新下载进度 |
+
+### 系统信息
+
+| 接口 | 方法 | 说明 |
+|---|---|---|
+| `/api/system/info` | GET | 返回 OS / 工具版本 / 存储用量 / 功能列表 |
 
 ### 文件下载
 
@@ -134,6 +141,16 @@ toolbox/
 任务字段：`id / status / progress / message / source_name / output_file / started_at / finished_at / duration_sec`
 
 固定参数：192 kbps MP3，初版不暴露码率/采样率选项。
+
+### system_info.py — 系统信息收集
+
+`collect()` 聚合：
+- **OS**: `platform.system / release / machine / processor / python_version / cpu_count`
+- **工具版本**: ffmpeg（`ffmpeg -version` 解析首行）、yt-dlp（`yt_dlp.version.__version__`）
+- **存储**: 递归统计 `downloads/` 与 `downloads/audio/` 文件数与字节数；`shutil.disk_usage` 拿磁盘剩余
+- **功能列表**: 静态硬编码，每个功能带 `name / tab / desc`，前端可点「前往」切换 tab
+
+纯只读，无状态、无副作用。
 
 ### updater.py — 自动更新
 

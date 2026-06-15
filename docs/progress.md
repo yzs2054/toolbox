@@ -73,6 +73,12 @@
   - [x] PyInstaller 打包模式下自动把 exe 同目录加入 PATH，让捆绑的 ffmpeg.exe 可被发现
   - [x] 完成任务提供「打开所在目录」按钮，跨平台调用系统文件管理器高亮选中文件，替代原浏览器下载链
 
+- [x] 系统 tab
+  - [x] 新增 `modules/system_info.py` + `GET /api/system/info`
+  - [x] 展示 OS / Python / CPU / 工具版本（ffmpeg、yt-dlp）/ 存储用量
+  - [x] 功能列表卡片，点「前往」直接切到对应 tab
+  - [x] 把更新 UI 从视频 tab 挪到系统 tab，状态更明确（已是最新 / 发现新版 / 检查失败带重试）
+
 ## v1.3.0 — 规划中
 
 ### 计划功能

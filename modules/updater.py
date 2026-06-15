@@ -28,6 +28,20 @@ def get_current_version() -> str:
     return "v0.0.0"
 
 
+def _parse_version(v: str) -> tuple:
+    """'v1.2.0' → (1, 2, 0)，非数字段当 0 处理。"""
+    parts = []
+    for p in (v or "").lstrip("vV").split("."):
+        n = ""
+        for ch in p:
+            if ch.isdigit():
+                n += ch
+            else:
+                break
+        parts.append(int(n) if n else 0)
+    return tuple(parts) or (0,)
+
+
 def check_update() -> dict:
     """检查 GitHub Releases 是否有新版本。"""
     try:
@@ -43,10 +57,10 @@ def check_update() -> dict:
                 download_url = a["browser_download_url"]
                 break
         return {
-            "has_update": latest != current,
+            "has_update": _parse_version(latest) > _parse_version(current),
             "current": current,
             "latest": latest,
-            "notes": release.get("body", "")[:500],
+            "notes": (release.get("body") or "")[:500],
             "download_url": download_url,
         }
     except Exception as e:

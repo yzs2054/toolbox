@@ -18,6 +18,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from modules import video_dl
 from modules import audio_extract
+from modules import system_info
 from modules import updater
 
 VERSION = updater.get_current_version()
@@ -145,6 +146,11 @@ def api_file_reveal():
 @app.route("/api/update/check", methods=["GET"])
 def api_check_update():
     return jsonify(updater.check_update())
+
+
+@app.route("/api/system/info", methods=["GET"])
+def api_system_info():
+    return jsonify(system_info.collect())
 
 
 @app.route("/api/update/start", methods=["POST"])
