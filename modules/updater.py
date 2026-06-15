@@ -50,7 +50,7 @@ def check_update() -> dict:
             "download_url": download_url,
         }
     except Exception as e:
-        return {"has_update": False, "error": str(e)[:200]}
+        return {"has_update": False, "current": get_current_version(), "error": str(e)[:200]}
 
 
 def _do_update(download_url: str):

@@ -1,7 +1,9 @@
 """视频提取与下载模块，供 Flask 调用。"""
 
+import json
 import re
 import threading
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -18,11 +20,49 @@ HEADERS = {
     ),
 }
 
+_DESKTOP_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
 DOWNLOAD_DIR = Path("downloads")
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+_HISTORY_FILE = DOWNLOAD_DIR / "history.json"
+_HISTORY_MAX = 200
+
 # 全局任务存储
 _tasks: dict[str, dict] = {}
+_tasks_lock = threading.Lock()
+
+
+def _load_history() -> None:
+    if not _HISTORY_FILE.exists():
+        return
+    try:
+        data = json.loads(_HISTORY_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            for t in data:
+                if isinstance(t, dict) and t.get("id"):
+                    _tasks[t["id"]] = t
+    except Exception:
+        pass
+
+
+def _save_history_locked() -> None:
+    items = sorted(_tasks.values(), key=lambda t: t.get("started_at", 0), reverse=True)[:_HISTORY_MAX]
+    tmp = _HISTORY_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(_HISTORY_FILE)
+
+
+def _persist() -> None:
+    with _tasks_lock:
+        _save_history_locked()
+
+
+_load_history()
 
 
 def fetch_html(url: str) -> str:
@@ -31,7 +71,58 @@ def fetch_html(url: str) -> str:
     return resp.text
 
 
+def _fetch(url: str, headers: dict) -> str:
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
+
+def _extract_baidu_haokan(url: str) -> list[dict]:
+    """百度新闻视频落地页 → 走好看视频侧拉直链。
+
+    mbd.baidu.com/newspage/data/videolanding 反爬极重（IP 层验证码），
+    但同一个 nid 在 haokan.baidu.com 是公开页，HTML 里直接含多路清晰度 mp4 直链。
+    """
+    parsed = urlparse(url)
+    nid = parse_qs(parsed.query).get("nid", [None])[0]
+    if not nid:
+        return []
+
+    html = _fetch(
+        f"https://haokan.baidu.com/v?vid={nid}",
+        headers={"User-Agent": _DESKTOP_UA},
+    )
+
+    titles = re.findall(r'"title":"([^"]+)"', html)
+    main_title = titles[0] if titles else "baidu_video"
+
+    videos: list[dict] = []
+    seen: set[str] = set()
+    for m in re.finditer(r'"url":"(https://vdept[^"]+\.mp4[^"]*)"', html):
+        quality = "?"
+        ctx = html[max(0, m.start() - 200):m.start()]
+        ctx_titles = re.findall(r'"title":"([^"]+)"', ctx)
+        if ctx_titles:
+            quality = ctx_titles[-1]
+
+        video_url = m.group(1).replace("\\u0026", "&")
+        if video_url in seen:
+            continue
+        seen.add(video_url)
+        videos.append({
+            "type": "direct",
+            "url": video_url,
+            "title": f"{main_title} ({quality})",
+        })
+    return videos
+
+
 def extract_videos(url: str) -> list[dict]:
+    if "mbd.baidu.com/newspage/data/videolanding" in url:
+        videos = _extract_baidu_haokan(url)
+        if videos:
+            return videos
+
     html = fetch_html(url)
     soup = BeautifulSoup(html, "lxml")
     title = soup.title.string.strip() if soup.title and soup.title.string else "video"
@@ -107,6 +198,9 @@ def _run_ytdlp(url: str, output_dir: str, title: str, task_id: str = "") -> dict
                     _tasks[task_id]["progress"] = round(d["downloaded_bytes"] / total * 100)
             elif d["status"] == "finished":
                 _tasks[task_id]["progress"] = 100
+                fn = d.get("filename") or ""
+                if fn:
+                    _tasks[task_id]["output_file"] = Path(fn).name
 
     try:
         with yt_dlp.YoutubeDL({
@@ -136,6 +230,7 @@ def _run_direct(url: str, output_dir: str, title: str, task_id: str) -> dict:
                 done += len(chunk)
                 if total:
                     _tasks[task_id]["progress"] = round(done / total * 100)
+        _tasks[task_id]["output_file"] = filepath.name
         return {"ok": True, "msg": f"已保存到 {filepath.name}"}
     except Exception as e:
         return {"ok": False, "msg": str(e)[:200]}
@@ -156,17 +251,24 @@ def _worker(task_id: str, video: dict):
     except Exception as e:
         task["status"] = "error"
         task["message"] = str(e)[:200]
+    finally:
+        task["finished_at"] = time.time()
+        _persist()
 
 
 def start_download(video: dict) -> str:
     task_id = uuid.uuid4().hex[:12]
-    _tasks[task_id] = {
-        "id": task_id,
-        "status": "downloading",
-        "progress": 0,
-        "message": "",
-        "video": video,
-    }
+    with _tasks_lock:
+        _tasks[task_id] = {
+            "id": task_id,
+            "status": "downloading",
+            "progress": 0,
+            "message": "",
+            "video": video,
+            "started_at": time.time(),
+            "finished_at": None,
+            "output_file": "",
+        }
     t = threading.Thread(target=_worker, args=(task_id, video), daemon=True)
     t.start()
     return task_id
@@ -177,4 +279,7 @@ def get_task(task_id: str) -> dict | None:
 
 
 def list_tasks() -> list[dict]:
-    return list(_tasks.values())
+    with _tasks_lock:
+        items = list(_tasks.values())
+    items.sort(key=lambda t: t.get("started_at") or 0, reverse=True)
+    return items

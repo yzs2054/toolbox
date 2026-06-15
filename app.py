@@ -83,7 +83,8 @@ def _open_browser(port: int):
 
 
 if __name__ == "__main__":
-    port = 8080
+    import os
+    port = int(os.environ.get("PORT", 8080))
     threading.Thread(target=_open_browser, args=(port,), daemon=True).start()
-    print(f"工具箱已启动: http://localhost:8080")
+    print(f"工具箱已启动: http://localhost:{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
