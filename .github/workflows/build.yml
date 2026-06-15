@@ -44,13 +44,20 @@ jobs:
             --name toolbox `
             app.py
 
+      - name: Read version
+        id: ver
+        shell: bash
+        run: |
+          v=$(tr -d '[:space:]' < version.txt)
+          echo "version=$v" >> $GITHUB_OUTPUT
+
       - name: Package
         run: |
-          Compress-Archive -Path dist/toolbox.exe,ffmpeg.exe,ffprobe.exe -DestinationPath toolbox-windows.zip
+          Compress-Archive -Path dist/toolbox.exe,ffmpeg.exe,ffprobe.exe -DestinationPath "toolbox-${{ steps.ver.outputs.version }}-windows.zip"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: toolbox-windows.zip
+          files: "toolbox-${{ steps.ver.outputs.version }}-windows.zip"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -38,7 +38,7 @@ PORT=8090 python app.py
 
 ### 使用打包版（Windows）
 
-到 [Releases](../../releases) 下载 `toolbox-windows.zip`，解压后双击 `toolbox.exe`。
+到 [Releases](../../releases) 下载 `toolbox-vX.Y.Z-windows.zip`，解压后双击 `toolbox.exe`。
 捆绑了 `ffmpeg.exe` 和 `ffprobe.exe`，无需额外安装。
 
 ## 使用说明
