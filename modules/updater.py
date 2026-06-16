@@ -46,6 +46,19 @@ def get_current_version() -> str:
     return "v0.0.0"
 
 
+def get_variant() -> str:
+    """读取打包时捆绑的 variant.txt。开发态返回 'dev'。
+
+    web 版打包时 --add-data "variant-web.txt;variant.txt"
+    desktop 版打包时 --add-data "variant-desktop.txt;variant.txt"
+    """
+    base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).parent.parent
+    vf = base / "variant.txt"
+    if vf.exists():
+        return vf.read_text(encoding="utf-8").strip()
+    return "dev"
+
+
 def _parse_version(v: str) -> tuple:
     """'v1.2.0' → (1, 2, 0)，非数字段当 0 处理。"""
     parts = []
@@ -101,10 +114,14 @@ def check_update() -> dict:
         mirror_prefix, release = result
         latest = release["tag_name"]
         current = get_current_version()
+        variant = get_variant()
         assets = release.get("assets", [])
         download_url = ""
+        # 按 variant 选 asset（dev 模式默认 web）
+        target_variant = variant if variant != "dev" else "web"
         for a in assets:
-            if "windows" in a["name"].lower():
+            name = a["name"].lower()
+            if "windows" in name and f"-{target_variant}" in name:
                 download_url = a["browser_download_url"]
                 break
         # 下载阶段继续用检查阶段跑通的镜像

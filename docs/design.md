@@ -2,45 +2,69 @@
 
 ## 系统架构
 
+**双轨入口**：同一套 `modules/`，跑在两个 UI 上：
+
 ```
-浏览器 ←→ Flask (app.py) ←→ modules/
-                  │
-                  ├── video_dl.py    视频下载模块
-                  ├── updater.py     自动更新模块
-                  └── (后续模块...)
+┌────────────────┐         ┌────────────────┐
+│   Web 版       │         │   Desktop 版   │
+│  app.py+Flask  │         │ main.py+Qt     │
+│  浏览器 UI     │         │ 原生窗口 UI    │
+└───────┬────────┘         └────────┬───────┘
+        │                           │
+        └───────────┬───────────────┘
+                    ▼
+            ┌──────────────┐
+            │   modules/   │  纯 Python 后端，跟 UI 完全解耦
+            └──────────────┘
 ```
+
+- **Web 版**（`app.py`）：Flask + 浏览器，跨平台，UI 在 `templates/` + `static/`
+- **Desktop 版**（`main.py`）：PySide6（Qt6）原生窗口，无 Flask、无浏览器，UI 在 `desktop/`
+- 两版本共用同一个 `data/` 目录与历史 JSON，**任务历史跨版本连续**
 
 ## 目录结构
 
 ```
 toolbox/
-├── app.py                    # Flask 入口，路由定义
-├── version.txt               # 当前版本号
-├── requirements.txt          # Python 依赖
+├── app.py                    # Web 版入口（Flask）
+├── main.py                   # Desktop 版入口（PySide6）
+├── version.txt               # 当前版本号（双版本共用）
+├── variant-web.txt           # 内容 "web"，打包时 bundle 为 variant.txt
+├── variant-desktop.txt       # 内容 "desktop"，打包时 bundle 为 variant.txt
+├── requirements.txt          # Python 依赖（含 pyside6）
 ├── modules/
 │   ├── __init__.py
 │   ├── video_dl.py           # 视频提取与下载 + 任务历史
 │   ├── audio_extract.py      # 视频转 MP3 + 任务历史
 │   ├── video_transcode.py    # 视频转码（H.264/H.265/VP9）+ 任务历史
 │   ├── system_info.py        # 系统信息收集
+│   ├── file_ops.py           # reveal_in_file_manager 等跨入口工具
 │   ├── channels_dl.py        # 视频号解析（依赖 Cookie，未接入 Web）
-│   └── updater.py            # 自动更新
+│   └── updater.py            # 自动更新（含 variant 检测）
+├── desktop/                  # Desktop UI
+│   ├── main_window.py        # QMainWindow + QTabWidget
+│   ├── video_tab.py          # 视频下载 tab
+│   ├── audio_tab.py          # 音频提取 tab
+│   ├── transcode_tab.py      # 视频转码 tab
+│   ├── system_tab.py         # 系统信息 tab
+│   ├── widgets.py            # TaskCard / VideoCard / Dropzone
+│   └── style.qss             # 暗色 Qt 样式表
 ├── templates/
-│   └── index.html            # 单页面，Tab 切换功能
+│   └── index.html            # Web 版单页面
 ├── static/
-│   ├── style.css             # 样式
-│   └── app.js                # 前端逻辑
+│   ├── style.css             # Web 版样式
+│   └── app.js                # Web 版前端逻辑
 ├── data/                     # 应用产物根目录
 │   ├── downloads/            # 视频下载产物
-│   │   └── history.json      # 视频任务历史索引（自动生成）
+│   │   └── history.json      # 视频任务历史索引（自动生成，双版本共用）
 │   ├── audio/                # MP3 转换产物
-│   │   └── history.json      # 音频转换历史索引（自动生成）
+│   │   └── history.json      # 音频转换历史索引（自动生成，双版本共用）
 │   ├── video_transcode/      # 转码产物
-│   │   └── history.json      # 转码历史索引（自动生成）
-│   └── _uploads/             # 上传临时目录（自动清理）
+│   │   └── history.json      # 转码历史索引（自动生成，双版本共用）
+│   └── _uploads/             # Web 版上传临时目录（自动清理）
 ├── docs/                     # 项目文档
 └── .github/workflows/
-    └── build.yml             # CI/CD 构建配置
+    └── build.yml             # CI/CD：一次跑两次 PyInstaller，打两个 zip
 ```
 
 ## 运行配置
@@ -105,6 +129,87 @@ toolbox/
 - Linux: `xdg-open <父目录>`
 
 路径必须解析后仍位于对应模块的 `DOWNLOAD_DIR` / `AUDIO_DIR` / `TRANSCODE_DIR` 之内，否则拒绝。
+
+## Desktop 版架构
+
+### 双入口共用后端
+
+`modules/` 是纯 Python 函数集合，跟 Flask 完全解耦。Desktop 版直接 `import` 调用，
+不走 HTTP。两版共用同一份 `data/` 与历史 JSON，**任务历史跨版本连续**。
+
+### `start_task` 签名约定
+
+`audio_extract.start_task()` 和 `video_transcode.start_task()` 接收磁盘路径而非 werkzeug
+FileStorage：
+
+```python
+def start_task(input_path: str, source_name: str, owns_input: bool = True) -> str
+```
+
+- **Web 版** `owns_input=True`：FileStorage 先 `save_upload()` 到 `data/_uploads/`，
+  转换完删掉这个临时上传
+- **Desktop 版** `owns_input=False`：QFileDialog 直接拿到的是用户本地路径，
+  不属于应用，转换完不删
+
+worker / 历史 / 锁机制两边完全一致。
+
+### `main.py` 入口
+
+```python
+if getattr(sys, "frozen", False):
+    # 把捆绑的 ffmpeg.exe 同目录注入 PATH（与 app.py 相同处理）
+    _exe_dir = str(Path(sys.executable).parent)
+    os.environ["PATH"] = _exe_dir + os.pathsep + os.environ.get("PATH", "")
+
+app = QApplication(sys.argv)
+app.setStyleSheet(resource_path("desktop/style.qss").read_text(...))
+win = MainWindow()   # QTabWidget 装 4 个 tab
+win.show()
+sys.exit(app.exec())
+```
+
+`resource_path()` 在 frozen 模式下从 `sys._MEIPASS` 读 QSS 等资源，
+开发态从仓库根目录读。
+
+### Qt 线程模型
+
+后端模块的 worker 跑在 `threading.Thread` 里，**不能**直接动 Qt 控件。
+通用做法：worker 把结果存 `self._pending_xxx`，主线程用
+`QTimer.singleShot(0, self._apply_xxx)` 读取并刷新 UI。
+
+`SystemTab._check_update` 用这个模式调 `updater.check_update()` —— 网络 IO 不阻塞 UI。
+各 tab 的轮询 `QTimer` 1s 拉 `list_tasks()` / `get_progress()`，刷新 TaskCard。
+
+### `variant.txt` 检测
+
+`updater.get_variant()` 读 PyInstaller 捆绑的 `variant.txt`：
+
+```python
+def get_variant() -> str:
+    base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).parent.parent
+    vf = base / "variant.txt"
+    return vf.read_text(encoding="utf-8").strip() if vf.exists() else "dev"
+```
+
+`check_update()` 按当前 variant 过滤 GitHub Release asset：
+
+| 当前 variant | 匹配 asset 名（子串） |
+|---|---|
+| `web` | `windows-web.zip` |
+| `desktop` | `windows-desktop.zip` |
+| `dev`（开发态） | 默认按 `web` 处理 |
+
+CI 把 `variant-web.txt` / `variant-desktop.txt` 分别以 `variant.txt` 名字 bundle 进两个 exe，
+因此同一 Release 下，两个版本的「检查更新」会各自只看自己的 zip。
+
+### 资源命名约定
+
+Release 资产命名：`toolbox-vX.Y.Z-windows-{variant}.zip`
+
+- `toolbox-v1.4.0-windows-web.zip`
+- `toolbox-v1.4.0-windows-desktop.zip`
+
+匹配规则 `f"-{variant}"`，不会交叉匹配。
 
 ## 核心模块设计
 
@@ -214,6 +319,9 @@ toolbox/
   `_MEIPASS` 临时解压目录，需用 `sys._MEIPASS / version.txt` 才能拿到，否则 Windows
   打包后始终显示 `v0.0.0`
 
+**Variant 检测**（v1.4.0+）：`get_variant()` 读 `variant.txt`，返回 `web` / `desktop` / `dev`。
+`check_update()` 按 variant 过滤 Release asset，确保两个版本各自只看自己的 zip。详见上文「Desktop 版架构」。
+
 **版本比较**：解析 `vX.Y.Z` 拆成 `(major, minor, patch)` 元组逐段比较，
 避免字符串 `"v1.1.0" > "v1.0.0"` 这类基于字典序的误判。
 
@@ -228,7 +336,16 @@ GitHub Release `body` 字段可能为 `null`，统一用 `(release.get("body") o
                                                       ↓
                                               GitHub Actions 触发
                                                       ↓
-                                        Windows 环境打包 exe + ffmpeg
+                          Windows 环境跑两次 PyInstaller：
+                          toolbox-web.exe（含 templates/ + static/）
+                          toolbox-desktop.exe（含 desktop/style.qss）
                                                       ↓
-                                            自动创建 Release + 上传 zip
+                          打两个 zip：windows-web.zip / windows-desktop.zip
+                          各自捆绑 ffmpeg.exe / ffprobe.exe
+                                                      ↓
+                                        自动创建 Release + 上传两个 zip
 ```
+
+用户从 Release 按需下载：
+- 想要浏览器版 → `windows-web.zip`，运行后启 Flask 自动开浏览器
+- 想要原生窗口版 → `windows-desktop.zip`，双击直接弹原生窗口，无 Flask、无浏览器

@@ -1,6 +1,11 @@
 # 多功能工具箱
 
-本地运行的 Web 工具箱，浏览器操作。目前包含视频下载、视频转 MP3、视频转码、系统信息四个功能模块，后续持续迭代。
+本地运行的多功能工具箱，**双版本可用**：
+
+- **Web 版**：Flask + 浏览器，跨平台，启动后自动打开浏览器
+- **Desktop 版**：PySide6 原生窗口（Qt6），不启 Flask、不开浏览器，双击即弹原生窗口
+
+两版共用同一套后端与 `data/` 数据目录，任务历史跨版本连续。目前包含视频下载、视频转 MP3、视频转码、系统信息四个功能模块，后续持续迭代。
 
 ## 功能
 
@@ -30,17 +35,24 @@ pip install -r requirements.txt
 # macOS:         brew install ffmpeg
 # Windows:       https://www.gyan.dev/ffmpeg/builds/
 
+# Web 版（浏览器 UI）
 python app.py
 # 默认 http://localhost:8080，可用 PORT 覆盖
 PORT=8090 python app.py
-```
 
-打开浏览器访问 `http://localhost:<port>`。
+# Desktop 版（原生窗口）
+python main.py
+```
 
 ### 使用打包版（Windows）
 
-到 [Releases](../../releases) 下载 `toolbox-vX.Y.Z-windows.zip`，解压后双击 `toolbox.exe`。
-捆绑了 `ffmpeg.exe` 和 `ffprobe.exe`，无需额外安装。
+到 [Releases](../../releases) 按需下载：
+
+- `toolbox-vX.Y.Z-windows-web.zip` —— 浏览器版，解压双击 `toolbox-web.exe`，启动后自动开浏览器
+- `toolbox-vX.Y.Z-windows-desktop.zip` —— 原生窗口版，解压双击 `toolbox-desktop.exe`，直接弹原生窗口
+
+两个 zip 都捆绑了 `ffmpeg.exe` 和 `ffprobe.exe`，无需额外安装。
+两个版本的「检查更新」各自只看自己通道的 Release 资产，互不串扰。
 
 ## 使用说明
 
@@ -80,23 +92,32 @@ PORT=8090 python app.py
 
 ```
 .
-├── app.py                  # Flask 入口
-├── version.txt             # 当前版本号
-├── requirements.txt
-├── modules/
+├── app.py                  # Web 版入口（Flask）
+├── main.py                 # Desktop 版入口（PySide6）
+├── version.txt             # 当前版本号（双版本共用）
+├── variant-web.txt         # bundle 时改名 variant.txt，标识 web 通道
+├── variant-desktop.txt     # bundle 时改名 variant.txt，标识 desktop 通道
+├── requirements.txt        # 依赖（含 pyside6）
+├── modules/                # 后端，双版本共用
 │   ├── video_dl.py         # 视频提取与下载
 │   ├── audio_extract.py    # 视频转 MP3
 │   ├── video_transcode.py  # 视频转码
 │   ├── system_info.py      # 系统信息收集
-│   ├── updater.py          # 自动更新
-│   └── channels_dl.py      # 视频号解析（未接入 Web UI）
-├── templates/index.html    # 单页面
-├── static/                 # JS / CSS
-├── data/                    # 产物与历史（gitignored，自动生成）
-│   ├── downloads/           # 视频下载
-│   ├── audio/               # MP3 转换
-│   ├── video_transcode/     # 视频转码
-│   └── _uploads/            # 上传临时目录
+│   ├── file_ops.py         # reveal_in_file_manager 等工具
+│   ├── updater.py          # 自动更新（含 variant 检测）
+│   └── channels_dl.py      # 视频号解析（未接入 UI）
+├── desktop/                # Desktop UI（PySide6）
+│   ├── main_window.py      # QMainWindow + QTabWidget
+│   ├── video_tab.py / audio_tab.py / transcode_tab.py / system_tab.py
+│   ├── widgets.py          # TaskCard / VideoCard / Dropzone
+│   └── style.qss           # 暗色 Qt 样式
+├── templates/index.html    # Web 版单页面
+├── static/                 # Web 版 JS / CSS
+├── data/                   # 产物与历史（gitignored，自动生成，双版本共用）
+│   ├── downloads/          # 视频下载
+│   ├── audio/              # MP3 转换
+│   ├── video_transcode/    # 视频转码
+│   └── _uploads/           # Web 版上传临时目录
 └── docs/
     ├── design.md           # 架构与 API 设计
     ├── progress.md         # 版本进度
@@ -107,24 +128,29 @@ PORT=8090 python app.py
 
 ## 构建
 
-CI 在打 tag 推送时自动构建 Windows exe 并发 Release：
+CI 在打 tag 推送时**一次跑两次 PyInstaller**，分别打 Web / Desktop 两个 exe，捆绑 ffmpeg 后生成两个 zip：
 
 ```bash
 # 修改 version.txt 后
 git commit -am "bump version"
-git tag v1.2.0
+git tag v1.4.0
 git push --tags
 ```
 
-`.github/workflows/build.yml` 会在 `windows-latest` 上用 PyInstaller 打包，捆绑 ffmpeg，并自动创建 Release。
+`.github/workflows/build.yml` 会在 `windows-latest` 上：
+1. 跑 PyInstaller 打 `toolbox-web.exe`（含 templates/ + static/ + variant-web.txt → variant.txt）
+2. 跑 PyInstaller 打 `toolbox-desktop.exe`（含 desktop/style.qss + variant-desktop.txt → variant.txt）
+3. 各自捆绑 ffmpeg.exe / ffprobe.exe 后生成 `toolbox-vX.Y.Z-windows-{web,desktop}.zip`
+4. 自动创建 Release 上传两个 zip
 
 ## 技术栈
 
-- 后端：Python + Flask
-- 前端：HTML + Tailwind CSS（CDN）+ 原生 JS
+- 后端：Python（modules/，双版本共用）
+- Web 版：Flask + HTML + Tailwind CSS（CDN）+ 原生 JS
+- Desktop 版：PySide6（Qt6 官方 Python 绑定），无 Flask、无 WebView
 - 视频下载：yt-dlp（Python 库调用）
 - 音视频转码：ffmpeg（libx264 / libx265 / libvpx-vp9 / libmp3lame / libopus）
-- 打包：PyInstaller
+- 打包：PyInstaller（双 zip）
 - CI/CD：GitHub Actions
 
 ## 已知限制

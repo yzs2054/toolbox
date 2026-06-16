@@ -103,7 +103,7 @@ def _run_ffmpeg(input_path: str, output_path: str, duration: float, task_id: str
         return False
 
 
-def _worker(task_id: str, input_path: str, source_name: str):
+def _worker(task_id: str, input_path: str, source_name: str, owns_input: bool):
     task = _tasks[task_id]
     try:
         base = _sanitize(Path(source_name).stem)
@@ -125,18 +125,24 @@ def _worker(task_id: str, input_path: str, source_name: str):
         task["status"] = "error"
         task["message"] = str(e)[:200]
     finally:
-        # 清理临时上传文件
-        try:
-            Path(input_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        # 仅当输入是 web 版临时上传的文件时才删（desktop 版 path 来自用户本地，不能动）
+        if owns_input:
+            try:
+                Path(input_path).unlink(missing_ok=True)
+            except Exception:
+                pass
         task["finished_at"] = time.time()
         _persist()
 
 
-def start_task(file_storage) -> str:
+def start_task(input_path: str, source_name: str, owns_input: bool = True) -> str:
+    """启动 MP3 转换。
+
+    - input_path: 源视频文件路径（已落盘）
+    - source_name: 原始文件名，用于输出命名
+    - owns_input: 是否由本模块管理 input_path（web 上传时 True，转换完会删；desktop 直传用户文件时 False）
+    """
     task_id = uuid.uuid4().hex[:12]
-    input_path, source_name = save_upload(file_storage)
     with _tasks_lock:
         _tasks[task_id] = {
             "id": task_id,
@@ -148,7 +154,7 @@ def start_task(file_storage) -> str:
             "started_at": time.time(),
             "finished_at": None,
         }
-    t = threading.Thread(target=_worker, args=(task_id, input_path, source_name), daemon=True)
+    t = threading.Thread(target=_worker, args=(task_id, input_path, source_name, owns_input), daemon=True)
     t.start()
     return task_id
 

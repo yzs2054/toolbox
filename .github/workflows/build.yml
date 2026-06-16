@@ -36,14 +36,24 @@ jobs:
           Copy-Item ffmpeg_tmp/ffmpeg-*-essentials_build/bin/ffmpeg.exe .
           Copy-Item ffmpeg_tmp/ffmpeg-*-essentials_build/bin/ffprobe.exe .
 
-      - name: Build EXE
+      - name: Build Web EXE
         run: |
           pyinstaller --onefile `
             --add-data "templates;templates" `
             --add-data "static;static" `
             --add-data "version.txt;." `
-            --name toolbox `
+            --add-data "variant-web.txt;variant.txt" `
+            --name toolbox-web `
             app.py
+
+      - name: Build Desktop EXE
+        run: |
+          pyinstaller --onefile `
+            --add-data "version.txt;." `
+            --add-data "variant-desktop.txt;variant.txt" `
+            --add-data "desktop/style.qss;desktop" `
+            --name toolbox-desktop `
+            main.py
 
       - name: Read version
         id: ver
@@ -52,13 +62,19 @@ jobs:
           v=$(tr -d '[:space:]' < version.txt)
           echo "version=$v" >> $GITHUB_OUTPUT
 
-      - name: Package
+      - name: Package Web
         run: |
-          Compress-Archive -Path dist/toolbox.exe,ffmpeg.exe,ffprobe.exe -DestinationPath "toolbox-${{ steps.ver.outputs.version }}-windows.zip"
+          Compress-Archive -Path dist/toolbox-web.exe,ffmpeg.exe,ffprobe.exe -DestinationPath "toolbox-${{ steps.ver.outputs.version }}-windows-web.zip"
+
+      - name: Package Desktop
+        run: |
+          Compress-Archive -Path dist/toolbox-desktop.exe,ffmpeg.exe,ffprobe.exe -DestinationPath "toolbox-${{ steps.ver.outputs.version }}-windows-desktop.zip"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: "toolbox-${{ steps.ver.outputs.version }}-windows.zip"
+          files: |
+            toolbox-${{ steps.ver.outputs.version }}-windows-web.zip
+            toolbox-${{ steps.ver.outputs.version }}-windows-desktop.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

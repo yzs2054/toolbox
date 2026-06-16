@@ -1,8 +1,6 @@
 """多功能工具箱 — Web 入口"""
 
 import os
-import platform
-import subprocess
 import sys
 import webbrowser
 import threading
@@ -21,24 +19,10 @@ from modules import audio_extract
 from modules import video_transcode
 from modules import system_info
 from modules import updater
+from modules.file_ops import reveal_in_file_manager
 
 VERSION = updater.get_current_version()
 app = Flask(__name__)
-
-
-def _reveal_in_file_manager(path: str) -> None:
-    """跨平台打开文件管理器并高亮选中文件。"""
-    p = Path(path).resolve()
-    if not p.exists():
-        raise FileNotFoundError(str(p))
-    system = platform.system()
-    if system == "Windows":
-        subprocess.Popen(["explorer", "/select,", str(p)])
-    elif system == "Darwin":
-        subprocess.Popen(["open", "-R", str(p)])
-    else:
-        # Linux 无统一标准，打开父目录即可
-        subprocess.Popen(["xdg-open", str(p.parent)])
 
 
 @app.route("/")
@@ -90,7 +74,8 @@ def api_audio_upload():
     f = request.files.get("file")
     if not f or not f.filename:
         return jsonify({"error": "未收到文件"}), 400
-    task_id = audio_extract.start_task(f)
+    input_path, source_name = audio_extract.save_upload(f)
+    task_id = audio_extract.start_task(input_path, source_name, owns_input=True)
     return jsonify({"task_id": task_id})
 
 
@@ -118,7 +103,8 @@ def api_video_transcode_upload():
     codec = (request.form.get("codec") or "h264").strip()
     quality = (request.form.get("quality") or "balanced").strip()
     resolution = (request.form.get("resolution") or "source").strip()
-    task_id = video_transcode.start_task(f, codec, quality, resolution)
+    input_path, source_name = video_transcode.save_upload(f)
+    task_id = video_transcode.start_task(input_path, source_name, codec, quality, resolution, owns_input=True)
     return jsonify({"task_id": task_id})
 
 
@@ -169,7 +155,7 @@ def api_file_reveal():
         return jsonify({"error": "文件已被移动或删除"}), 404
 
     try:
-        _reveal_in_file_manager(str(target))
+        reveal_in_file_manager(str(target))
     except Exception as e:
         return jsonify({"error": str(e)[:200]}), 500
     return jsonify({"ok": True})

@@ -111,11 +111,34 @@
   - [x] 记忆生效镜像前缀，下载阶段复用同一个镜像，失败再回退 `github.com` 直链
   - [x] 所有源都失败时 1.5s 内返回错误，避免 UI 假死
 
-## v1.4.0 — 规划中
+## v1.4.0 — Desktop 原生版本（2026-06-16）
 
-### 计划功能
+### 已完成
 
-- [ ] Nuitka 替代 PyInstaller 打包
+- [x] Desktop 原生 GUI（PySide6 / Qt6）
+  - [x] 新增 `main.py` 入口，不启动 Flask，弹原生窗口
+  - [x] 新增 `desktop/` 目录：`main_window.py`（QMainWindow + QTabWidget）+ 4 个 tab（视频下载 / 音频提取 / 视频转码 / 系统信息）+ `widgets.py`（TaskCard / VideoCard / Dropzone）+ `style.qss`（暗色 Qt 样式）
+  - [x] Dropzone 支持拖拽 / 点击选文件，直接传本地路径给后端
+  - [x] 各 tab 用 QTimer 1s 轮询后端任务状态，刷新 TaskCard
+  - [x] SystemTab 用 `QTimer.singleShot(0, ...)` 把异步 `updater.check_update()` 结果切回主线程刷新 UI
+  - [x] 暗色 QSS 对齐 Web 版风格（#111827 背景 / #2563eb 主按钮 / 卡片 / 徽章 / hint 文案）
+
+- [x] 后端解耦与签名重构
+  - [x] 抽出 `modules/file_ops.py`，把原 `app.py` 里的 `_reveal_in_file_manager` 改成公开函数，双入口共用
+  - [x] `audio_extract.start_task(input_path, source_name, owns_input=True)`：Web 版传 owns_input=True（删临时上传），Desktop 版传 False（不删用户文件）
+  - [x] `video_transcode.start_task(...)` 同上重构
+  - [x] `updater.get_variant()` 读 PyInstaller 捆绑的 `variant.txt`，`check_update()` 按 variant 过滤 asset
+
+- [x] CI 双 zip 打包
+  - [x] `.github/workflows/build.yml` 一次跑两次 PyInstaller：`toolbox-web.exe`（含 templates/ + static/）+ `toolbox-desktop.exe`（含 desktop/style.qss）
+  - [x] 通过 `--add-data "variant-web.txt;variant.txt"` / `variant-desktop.txt;variant.txt` 区分两个 exe
+  - [x] Release 资产命名 `toolbox-vX.Y.Z-windows-{variant}.zip`，更新器按 variant 匹配
+  - [x] requirements.txt 加 `pyside6>=6.5`
+
+### 待解决
+
+- [ ] macOS / Linux desktop 打包（当前 CI 仅 Windows runner，PySide6 跨平台，后续可加 mac/linux）
+- [ ] Nuitka 替代 PyInstaller（exe 体积与误报问题）
 - [ ] 视频号解析接入 Web UI（依赖 Cookie）
 - [ ] 音频码率/采样率选项（当前固定 192 kbps）
 - [ ] 音频格式扩展（wav / aac）

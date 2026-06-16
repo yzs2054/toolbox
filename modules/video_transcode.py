@@ -121,7 +121,7 @@ def _run_ffmpeg(input_path, output_path, codec, crf, scale_height, duration, tas
         return False
 
 
-def _worker(task_id: str, input_path: str, source_name: str, codec: str, quality: str, resolution: str):
+def _worker(task_id: str, input_path: str, source_name: str, codec: str, quality: str, resolution: str, owns_input: bool):
     task = _tasks[task_id]
     try:
         if codec not in CODECS:
@@ -149,17 +149,21 @@ def _worker(task_id: str, input_path: str, source_name: str, codec: str, quality
         task["status"] = "error"
         task["message"] = str(e)[:200]
     finally:
-        try:
-            Path(input_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        if owns_input:
+            try:
+                Path(input_path).unlink(missing_ok=True)
+            except Exception:
+                pass
         task["finished_at"] = time.time()
         _persist()
 
 
-def start_task(file_storage, codec: str, quality: str, resolution: str) -> str:
+def start_task(input_path: str, source_name: str, codec: str, quality: str, resolution: str, owns_input: bool = True) -> str:
+    """启动转码。input_path 是已落盘的源视频路径，source_name 用于输出命名。
+
+    owns_input=True 时转换完会删 input_path（web 上传场景）；False 时不动（desktop 用户本地文件）。
+    """
     task_id = uuid.uuid4().hex[:12]
-    input_path, source_name = save_upload(file_storage)
     with _tasks_lock:
         _tasks[task_id] = {
             "id": task_id,
@@ -177,7 +181,7 @@ def start_task(file_storage, codec: str, quality: str, resolution: str) -> str:
         }
     t = threading.Thread(
         target=_worker,
-        args=(task_id, input_path, source_name, codec, quality, resolution),
+        args=(task_id, input_path, source_name, codec, quality, resolution, owns_input),
         daemon=True,
     )
     t.start()
