@@ -8,9 +8,9 @@ import time
 import uuid
 from pathlib import Path
 
-DOWNLOAD_DIR = Path("downloads")
-TRANSCODE_DIR = DOWNLOAD_DIR / "video_transcode"
-UPLOAD_TMP_DIR = DOWNLOAD_DIR / "_uploads"
+DATA_DIR = Path("data")
+TRANSCODE_DIR = DATA_DIR / "video_transcode"
+UPLOAD_TMP_DIR = DATA_DIR / "_uploads"
 TRANSCODE_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_TMP_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -101,6 +101,16 @@
   - [x] 加 `_parse_version()` 语义化版本比较，避免字符串字典序误判
   - [x] GitHub Release `body` 字段为 `null` 时兜底为空字符串
 
+- [x] 数据目录扁平化
+  - [x] 产物目录从 `downloads/{audio,video_transcode,_uploads}` 改为 `data/{downloads,audio,video_transcode,_uploads}`，四者同级
+  - [x] 历史文件迁移：旧 `downloads/history.json` → `data/downloads/history.json`，旧 `downloads/audio/history.json` → `data/audio/history.json`，转码同理
+  - [x] `.gitignore` 把 `downloads/` 换成 `data/`
+
+- [x] 更新检查与下载加速
+  - [x] `updater._fetch_release_json()` 多源竞速：直连 + ghproxy + gh-proxy + moeyy，4 路并发取首胜，总超时 8s
+  - [x] 记忆生效镜像前缀，下载阶段复用同一个镜像，失败再回退 `github.com` 直链
+  - [x] 所有源都失败时 1.5s 内返回错误，避免 UI 假死
+
 ## v1.4.0 — 规划中
 
 ### 计划功能

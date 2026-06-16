@@ -8,9 +8,9 @@ import time
 import uuid
 from pathlib import Path
 
-DOWNLOAD_DIR = Path("downloads")
-AUDIO_DIR = DOWNLOAD_DIR / "audio"
-UPLOAD_TMP_DIR = DOWNLOAD_DIR / "_uploads"
+DATA_DIR = Path("data")
+AUDIO_DIR = DATA_DIR / "audio"
+UPLOAD_TMP_DIR = DATA_DIR / "_uploads"
 AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_TMP_DIR.mkdir(parents=True, exist_ok=True)
 

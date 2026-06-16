@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
-DOWNLOAD_DIR = Path("downloads")
+DOWNLOAD_DIR = Path("data/downloads")
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Yuanbao cookie 存储

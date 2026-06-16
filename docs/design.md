@@ -30,13 +30,14 @@ toolbox/
 ├── static/
 │   ├── style.css             # 样式
 │   └── app.js                # 前端逻辑
-├── downloads/                # 下载文件存放
-│   ├── history.json          # 视频任务历史索引（自动生成）
-│   ├── _uploads/             # 上传临时目录（自动清理）
-│   ├── audio/
+├── data/                     # 应用产物根目录
+│   ├── downloads/            # 视频下载产物
+│   │   └── history.json      # 视频任务历史索引（自动生成）
+│   ├── audio/                # MP3 转换产物
 │   │   └── history.json      # 音频转换历史索引（自动生成）
-│   └── video_transcode/
-│       └── history.json      # 视频转码历史索引（自动生成）
+│   ├── video_transcode/      # 转码产物
+│   │   └── history.json      # 转码历史索引（自动生成）
+│   └── _uploads/             # 上传临时目录（自动清理）
 ├── docs/                     # 项目文档
 └── .github/workflows/
     └── build.yml             # CI/CD 构建配置
@@ -96,7 +97,7 @@ toolbox/
 | `/downloads/video_transcode/<filename>` | GET | 下载转码后的视频 |
 | `/api/file/reveal` | POST | 在系统文件管理器中打开并选中文件（跨平台） |
 
-**`/api/file/reveal`** 仅供本地用户使用 —— 文件已在 `downloads/` 下，
+**`/api/file/reveal`** 仅供本地用户使用 —— 文件已在 `data/` 下，
 没必要再走浏览器下载。请求体 `{"kind": "video"\|"audio"\|"video_transcode", "id": "<task_id>"}`，
 后端按 task_id 反查 `output_file` 后调用：
 - Windows: `explorer /select,"<path>"`
@@ -143,12 +144,12 @@ toolbox/
 
 **流程**：
 
-1. Flask 接收 multipart 上传 → 落到 `downloads/_uploads/<uuid>.<ext>`
+1. Flask 接收 multipart 上传 → 落到 `data/_uploads/<uuid>.<ext>`
 2. 启动后台线程，调用 `ffprobe` 拿视频时长（秒）
 3. 调用 `ffmpeg -nostats -progress pipe:1 -i in -vn -acodec libmp3lame -b:a 192k out.mp3`
 4. 解析 `out_time_ms` 进度行，结合时长实时更新进度百分比
-5. 成功后输出到 `downloads/audio/<basename>.mp3`，删除临时上传文件
-6. 任务持久化到 `downloads/audio/history.json`（结构与 video_dl 一致）
+5. 成功后输出到 `data/audio/<basename>.mp3`，删除临时上传文件
+6. 任务持久化到 `data/audio/history.json`（结构与 video_dl 一致）
 
 任务字段：`id / status / progress / message / source_name / output_file / started_at / finished_at / duration_sec`
 
@@ -158,7 +159,7 @@ toolbox/
 
 **流程**：
 
-1. Flask 接收 multipart 上传（含 `codec` / `quality` / `resolution` 表单字段）→ 落 `downloads/_uploads/<uuid>.<ext>`
+1. Flask 接收 multipart 上传（含 `codec` / `quality` / `resolution` 表单字段）→ 落 `data/_uploads/<uuid>.<ext>`
 2. 启动后台线程，调用 `ffprobe` 拿时长（秒）
 3. 按 codec 构造 ffmpeg 命令：
    - `h264`: `libx264` + `-crf N -preset medium`，输出 `.mp4`，音频 `aac 128k`
@@ -166,8 +167,8 @@ toolbox/
    - `vp9`:  `libvpx-vp9` + `-crf N -b:v 0`，输出 `.webm`，音频 `libopus 128k`
 4. 按 resolution 加 `-vf scale=-2:HEIGHT`（保持宽高比，宽度自动），`source` 时跳过
 5. 解析 `out_time_ms` 进度行，结合时长实时更新进度百分比
-6. 成功后输出到 `downloads/video_transcode/<stem>.<codec><ext>`，删除临时上传文件
-7. 任务持久化到 `downloads/video_transcode/history.json`（结构与 video_dl 一致）
+6. 成功后输出到 `data/video_transcode/<stem>.<codec><ext>`，删除临时上传文件
+7. 任务持久化到 `data/video_transcode/history.json`（结构与 video_dl 一致）
 
 **质量档位 → CRF**：`high=18` / `balanced=23` / `compressed=28`
 
@@ -180,7 +181,7 @@ toolbox/
 `collect()` 聚合：
 - **OS**: `platform.system / release / machine / processor / python_version / cpu_count`
 - **工具版本**: ffmpeg（`ffmpeg -version` 解析首行）、yt-dlp（`yt_dlp.version.__version__`）
-- **存储**: 递归统计 `downloads/`、`downloads/audio/`、`downloads/video_transcode/` 文件数与字节数；`shutil.disk_usage` 拿磁盘剩余
+- **存储**: 递归统计 `data/downloads/`、`data/audio/`、`data/video_transcode/` 文件数与字节数；`shutil.disk_usage` 拿磁盘剩余
 - **功能列表**: 静态硬编码，每个功能带 `name / tab / desc`，前端可点「前往」切换 tab
 
 纯只读，无状态、无副作用。
@@ -188,10 +189,24 @@ toolbox/
 ### updater.py — 自动更新
 
 1. 读取 `version.txt` 获取当前版本
-2. 请求 GitHub Releases API 获取最新版本
+2. 请求 GitHub Releases API 获取最新版本（**多源竞速**，见下）
 3. 版本不同则提示更新
 4. 下载 zip → 解压到 `_update` 目录 → 生成更新脚本
 5. 用户重启后自动替换文件
+
+**多源竞速**（解决 `api.github.com` 国内访问不稳）：
+
+`_MIRRORS` 列出 4 个候选源，每条 `(镜像前缀, releases/latest URL)`：
+- `""` + `https://api.github.com/...` —— 直连
+- `https://ghproxy.com/` + `https://ghproxy.com/https://api.github.com/...`
+- `https://gh-proxy.com/` + 同上
+- `https://github.moeyy.xyz/` + 同上
+
+`_fetch_release_json()` 用 `ThreadPoolExecutor` 并发打四路，`as_completed` 取第一个返回
+`tag_name` 字段的成功响应，总超时 8s，单源 connect 3s / read 5s。
+
+记忆 `_working_mirror`：检查阶段哪个镜像通了，下载阶段就把它前缀拼到 `download_url` 前面，
+避免又试一遍。下载阶段如果还失败，再退回 `github.com` 直链。
 
 **版本读取的两种路径**：
 - 开发态：`version.txt` 与 `app.py` 同目录

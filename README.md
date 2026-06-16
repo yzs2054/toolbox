@@ -12,7 +12,7 @@
 | 系统信息   | 显示 OS / Python / CPU / ffmpeg / yt-dlp 版本 / 存储用量 / 功能列表 / 软件更新                                                          |
 
 特性：
-- 任务历史持久化（`downloads/history.json`、`downloads/audio/history.json`、`downloads/video_transcode/history.json`），跨重启保留
+- 任务历史持久化（`data/downloads/history.json`、`data/audio/history.json`、`data/video_transcode/history.json`），跨重启保留
 - 完成的文件可直接调起系统文件管理器高亮选中（Win `explorer /select,` / macOS `open -R` / Linux `xdg-open`）
 - 软件自动更新（依赖 GitHub Releases，**仓库需公开**）
 
@@ -72,7 +72,7 @@ PORT=8090 python app.py
 切到「系统」tab，可查看：
 - 操作系统 / 架构 / CPU 核数 / Python 版本
 - 应用版本 / ffmpeg / yt-dlp 版本
-- 下载目录、音频目录、转码目录的文件数和总大小、磁盘剩余空间
+- 下载目录、音频目录、转码目录（均在 `data/` 下）的文件数和总大小、磁盘剩余空间
 - 功能列表（点「前往」直接切到对应 tab）
 - 软件更新（点「检查更新」，有新版才会出现「立即更新」按钮）
 
@@ -92,7 +92,11 @@ PORT=8090 python app.py
 │   └── channels_dl.py      # 视频号解析（未接入 Web UI）
 ├── templates/index.html    # 单页面
 ├── static/                 # JS / CSS
-├── downloads/              # 下载产物与历史（gitignored）
+├── data/                    # 产物与历史（gitignored，自动生成）
+│   ├── downloads/           # 视频下载
+│   ├── audio/               # MP3 转换
+│   ├── video_transcode/     # 视频转码
+│   └── _uploads/            # 上传临时目录
 └── docs/
     ├── design.md           # 架构与 API 设计
     ├── progress.md         # 版本进度

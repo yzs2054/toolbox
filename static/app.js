@@ -430,7 +430,7 @@ const audioPollTimers = {};
 
 function onAudioFilePicked() {
   const f = $('audio-file').files[0];
-  $('audio-file-name').textContent = f ? f.name : '未选择';
+  $('audio-file-name').textContent = f ? f.name : '未选择 · 也可以拖拽到这里';
   $('btn-audio-convert').disabled = !f;
 }
 
@@ -591,8 +591,28 @@ const RES_LABEL = {source: '原分辨率', 1080: '1080p', 720: '720p', 480: '480
 
 function onTranscodeFilePicked() {
   const f = $('tc-file').files[0];
-  $('tc-file-name').textContent = f ? f.name : '未选择';
+  $('tc-file-name').textContent = f ? f.name : '未选择 · 也可以拖拽到这里';
   $('btn-tc-convert').disabled = !f;
+}
+
+// 通用拖拽：把拖进来的文件写到对应 input 并触发 onchange
+function onDropOver(e, prefix) {
+  e.preventDefault();
+  $(prefix + '-dropzone').classList.add('border-blue-500', 'bg-blue-900/20');
+}
+function onDropLeave(e, prefix) {
+  $(prefix + '-dropzone').classList.remove('border-blue-500', 'bg-blue-900/20');
+}
+function onDropFile(e, prefix) {
+  e.preventDefault();
+  $(prefix + '-dropzone').classList.remove('border-blue-500', 'bg-blue-900/20');
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  const input = $(prefix === 'tc' ? 'tc-file' : 'audio-file');
+  const dt = new DataTransfer();
+  dt.items.add(f);
+  input.files = dt.files;
+  input.dispatchEvent(new Event('change'));
 }
 
 function showTranscodeError(msg) {

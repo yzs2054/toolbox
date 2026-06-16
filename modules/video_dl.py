@@ -26,7 +26,7 @@ _DESKTOP_UA = (
     "Chrome/131.0.0.0 Safari/537.36"
 )
 
-DOWNLOAD_DIR = Path("downloads")
+DOWNLOAD_DIR = Path("data/downloads")
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 _HISTORY_FILE = DOWNLOAD_DIR / "history.json"
