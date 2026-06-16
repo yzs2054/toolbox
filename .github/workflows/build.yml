@@ -48,7 +48,7 @@ jobs:
 
       - name: Build Desktop EXE
         run: |
-          pyinstaller --onefile `
+          pyinstaller --onefile --noconsole `
             --add-data "version.txt;." `
             --add-data "variant-desktop.txt;variant.txt" `
             --add-data "desktop/style.qss;desktop" `

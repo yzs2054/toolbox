@@ -55,6 +55,40 @@ QComboBox QAbstractItemView {
   color: #f3f4f6;
 }
 
+/* 菜单栏 */
+QMenuBar {
+  background: #111827;
+  color: #f3f4f6;
+  border-bottom: 1px solid #374151;
+}
+QMenuBar::item {
+  background: transparent;
+  padding: 6px 12px;
+}
+QMenuBar::item:selected, QMenuBar::item:pressed {
+  background: #1f2937;
+  color: #f3f4f6;
+}
+QMenu {
+  background: #1f2937;
+  border: 1px solid #374151;
+  color: #f3f4f6;
+  padding: 4px;
+}
+QMenu::item {
+  padding: 6px 26px;
+  border-radius: 3px;
+}
+QMenu::item:selected {
+  background: #2563eb;
+  color: white;
+}
+QMenu::separator {
+  height: 1px;
+  background: #374151;
+  margin: 4px 8px;
+}
+
 /* 按钮 */
 QPushButton {
   background: #2563eb;

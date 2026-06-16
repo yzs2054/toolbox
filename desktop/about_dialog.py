@@ -196,7 +196,9 @@ class AboutDialog(QDialog):
             row.addStretch(1)
             v = QLabel(value)
             v.setStyleSheet("color:#e5e7eb; font-family: monospace;")
-            row.addWidget(v)
+            v.setWordWrap(True)
+            v.setMinimumWidth(0)
+            row.addWidget(v, 1)
             cl.addLayout(row)
         return card
 
