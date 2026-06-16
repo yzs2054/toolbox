@@ -6,9 +6,10 @@ from pathlib import Path
 
 
 def resource_path(rel: str) -> Path:
-    """PyInstaller frozen 模式下从 sys._MEIPASS 读资源，否则从仓库根。"""
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-    return base / rel
+    """PyInstaller → sys._MEIPASS；Nuitka/开发态 → main.py 所在目录。"""
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / rel
+    return Path(__file__).parent / rel
 
 
 if __name__ == "__main__":

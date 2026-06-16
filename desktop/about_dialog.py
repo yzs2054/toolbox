@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -22,7 +23,7 @@ class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("关于")
-        self.resize(620, 600)
+        self.resize(560, 640)
         self._update_url: str = ""
         self._build()
         self._load_info()
@@ -144,23 +145,20 @@ class AboutDialog(QDialog):
             self.info_host.addWidget(err)
             return
 
-        row1 = QHBoxLayout()
-        row1.setSpacing(8)
-        row1.setContentsMargins(0, 0, 0, 0)
         os_card = self._info_card("操作系统", [
             ("系统", f"{data['os']['system']} {data['os']['release']}"),
             ("架构", data["os"].get("machine") or "-"),
             ("CPU", f"{data['os'].get('processor') or '-'} ({data['os'].get('cpu_count', 0)} 核)"),
             ("Python", data["os"].get("python") or "-"),
         ])
-        row1.addWidget(os_card, 1)
+        self.info_host.addWidget(os_card)
+
         tools_card = self._info_card("工具版本", [
             ("应用版本", data.get("app_version") or "-"),
             ("ffmpeg", data["tools"].get("ffmpeg") or "-"),
             ("yt-dlp", data["tools"].get("yt_dlp") or "-"),
         ])
-        row1.addWidget(tools_card, 1)
-        self.info_host.addLayout(row1)
+        self.info_host.addWidget(tools_card)
 
         st = data["storage"]
         storage_card = self._info_card("存储", [
@@ -184,22 +182,26 @@ class AboutDialog(QDialog):
         card.setProperty("card", True)
         cl = QVBoxLayout(card)
         cl.setContentsMargins(12, 10, 12, 10)
-        cl.setSpacing(2)
+        cl.setSpacing(6)
         t = QLabel(title)
         t.setProperty("role", "section-title")
         cl.addWidget(t)
-        for label, value in rows:
-            row = QHBoxLayout()
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(4)
+        grid.setColumnStretch(1, 1)
+        for i, (label, value) in enumerate(rows):
             l = QLabel(label)
             l.setProperty("role", "hint")
-            row.addWidget(l)
-            row.addStretch(1)
+            l.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            grid.addWidget(l, i, 0)
             v = QLabel(value)
             v.setStyleSheet("color:#e5e7eb; font-family: monospace;")
             v.setWordWrap(True)
             v.setMinimumWidth(0)
-            row.addWidget(v, 1)
-            cl.addLayout(row)
+            v.setAlignment(Qt.AlignTop | Qt.AlignRight)
+            grid.addWidget(v, i, 1)
+        cl.addLayout(grid)
         return card
 
     def _check_update(self):

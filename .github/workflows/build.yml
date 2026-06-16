@@ -28,6 +28,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
+          pip install nuitka zstandard ordered-set
 
       - name: Download ffmpeg
         run: |
@@ -48,11 +49,18 @@ jobs:
 
       - name: Build Desktop EXE
         run: |
-          pyinstaller --onefile --noconsole `
-            --add-data "version.txt;." `
-            --add-data "variant-desktop.txt;variant.txt" `
-            --add-data "desktop/style.qss;desktop" `
-            --name toolbox-desktop `
+          python -m nuitka `
+            --onefile `
+            --assume-yes-for-downloads `
+            --msvc=latest `
+            --windows-console-mode=disable `
+            --enable-plugin=pyside6 `
+            --include-data-files="version.txt=version.txt" `
+            --include-data-files="variant-desktop.txt=variant.txt" `
+            --include-data-files="desktop/style.qss=desktop/style.qss" `
+            --include-package=modules `
+            --output-dir=dist `
+            --output-filename=toolbox-desktop.exe `
             main.py
 
       - name: Read version
