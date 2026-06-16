@@ -52,7 +52,7 @@ jobs:
           python -m nuitka `
             --onefile `
             --assume-yes-for-downloads `
-            --msvc=latest `
+            --mingw64 `
             --windows-console-mode=disable `
             --enable-plugin=pyside6 `
             --include-data-files="version.txt=version.txt" `
