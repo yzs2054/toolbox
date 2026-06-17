@@ -8,6 +8,8 @@ import time
 import uuid
 from pathlib import Path
 
+from .subprocess_util import NO_WINDOW
+
 DATA_DIR = Path("data")
 AUDIO_DIR = DATA_DIR / "audio"
 UPLOAD_TMP_DIR = DATA_DIR / "_uploads"
@@ -72,6 +74,7 @@ def _probe_duration(path: str) -> float:
             ],
             stderr=subprocess.DEVNULL,
             timeout=30,
+            creationflags=NO_WINDOW,
         ).decode().strip()
         return float(out) if out else 0.0
     except Exception:
@@ -87,7 +90,7 @@ def _run_ffmpeg(input_path: str, output_path: str, duration: float, task_id: str
         "-y", output_path,
     ]
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, creationflags=NO_WINDOW)
         for line in proc.stdout:
             line = line.strip()
             if line.startswith("out_time_ms=") and duration > 0:

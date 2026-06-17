@@ -12,12 +12,13 @@ from . import video_dl
 from . import audio_extract
 from . import video_transcode
 from . import updater
+from .subprocess_util import NO_WINDOW
 
 
 def _ffmpeg_version() -> str:
     try:
         out = subprocess.check_output(
-            ["ffmpeg", "-version"], stderr=subprocess.STDOUT, timeout=5
+            ["ffmpeg", "-version"], stderr=subprocess.STDOUT, timeout=5, creationflags=NO_WINDOW
         ).decode(errors="ignore")
         first = out.splitlines()[0] if out else ""
         # "ffmpeg version 5.1.7-0+deb12u1 Copyright ..."
