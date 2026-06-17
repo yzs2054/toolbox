@@ -127,7 +127,17 @@ def extract_videos(url: str) -> list[dict]:
 
     html = fetch_html(url)
     soup = BeautifulSoup(html, "lxml")
-    title = soup.title.string.strip() if soup.title and soup.title.string else "video"
+    # 优先 og:title / twitter:title —— 公众号等 SPA 页 <title> 是空的
+    title = ""
+    for prop in ("og:title", "twitter:title"):
+        m = soup.find("meta", attrs={"property": prop}) or soup.find("meta", attrs={"name": prop})
+        if m and m.get("content"):
+            title = m["content"].strip()
+            break
+    if not title and soup.title and soup.title.string:
+        title = soup.title.string.strip()
+    if not title:
+        title = "video"
     videos = []
 
     # 1) 腾讯视频 iframe 嵌入
