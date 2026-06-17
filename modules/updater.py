@@ -15,6 +15,8 @@ from pathlib import Path
 
 import requests
 
+from version import VERSION
+
 # 改成你自己的 GitHub 仓库地址
 GITHUB_REPO = "yzs2054/toolbox"
 RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -36,42 +38,13 @@ _progress = {"status": "idle", "progress": 0, "message": ""}
 _working_mirror = ""  # 检查阶段成功的镜像前缀，下载阶段复用
 
 
-def _resource_base() -> Path:
-    """资源根目录：PyInstaller frozen → sys._MEIPASS；Nuitka/开发态 → 仓库根。"""
-    if hasattr(sys, "_MEIPASS"):
-        return Path(sys._MEIPASS)
-    return Path(__file__).parent.parent
-
-
 def get_current_version() -> str:
-    base = _resource_base()
-    version_file = base / "version.txt"
-    if version_file.exists():
-        return version_file.read_text(encoding="utf-8").strip()
-    return "v0.0.0"
+    return VERSION
 
 
 def get_variant() -> str:
-    """读取打包时捆绑的 variant.txt。开发态返回 'dev'。
-
-    web 版打包时 --add-data "variant-web.txt;variant.txt"
-    desktop 版打包时 --include-data-files="variant-desktop.txt=variant.txt" (Nuitka)
-    """
-    base = _resource_base()
-    vf = base / "variant.txt"
-    try:
-        v = vf.read_text(encoding="utf-8").strip()
-        if v:
-            return v
-    except Exception:
-        pass
-    # 读失败（Windows 临时目录权限问题等）→ 按 exe 名兜底
-    exe_name = Path(sys.executable).stem.lower()
-    if "desktop" in exe_name:
-        return "desktop"
-    if "web" in exe_name:
-        return "web"
-    return "dev"
+    """入口文件（main.py / app.py）在启动时设 TOOLBOX_VARIANT 环境变量。"""
+    return os.environ.get("TOOLBOX_VARIANT", "dev")
 
 
 def _parse_version(v: str) -> tuple:

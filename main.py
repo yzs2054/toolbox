@@ -4,9 +4,11 @@ import os
 import sys
 from pathlib import Path
 
+os.environ["TOOLBOX_VARIANT"] = "desktop"
+
 
 def resource_path(rel: str) -> Path:
-    """PyInstaller → sys._MEIPASS；Nuitka/开发态 → main.py 所在目录。"""
+    """PyInstaller → sys._MEIPASS；开发态 → main.py 所在目录。"""
     if hasattr(sys, "_MEIPASS"):
         return Path(sys._MEIPASS) / rel
     return Path(__file__).parent / rel

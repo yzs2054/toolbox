@@ -28,7 +28,6 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pyinstaller
-          pip install nuitka zstandard ordered-set
 
       - name: Download ffmpeg
         run: |
@@ -42,33 +41,22 @@ jobs:
           pyinstaller --onefile `
             --add-data "templates;templates" `
             --add-data "static;static" `
-            --add-data "version.txt;." `
-            --add-data "variant-web.txt;variant.txt" `
             --name toolbox-web `
             app.py
 
       - name: Build Desktop EXE
         run: |
-          python -m nuitka `
-            --onefile `
-            --assume-yes-for-downloads `
-            --mingw64 `
-            --windows-console-mode=disable `
-            --enable-plugin=pyside6 `
-            --include-data-files="version.txt=version.txt" `
-            --include-data-files="variant-desktop.txt=variant.txt" `
-            --include-data-files="desktop/style.qss=desktop/style.qss" `
-            --include-package=modules `
-            --output-dir=dist `
-            --output-filename=toolbox-desktop.exe `
+          pyinstaller --onefile --noconsole `
+            --add-data "desktop/style.qss;desktop" `
+            --name toolbox-desktop `
             main.py
 
       - name: Read version
         id: ver
         shell: bash
         run: |
-          v=$(tr -d '[:space:]' < version.txt)
-          echo "version=$v" >> $GITHUB_OUTPUT
+          v=$(python -c "from version import VERSION; print(VERSION.lstrip('v'))")
+          echo "version=v$v" >> $GITHUB_OUTPUT
 
       - name: Package Web
         run: |

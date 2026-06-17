@@ -6,6 +6,8 @@ import webbrowser
 import threading
 from pathlib import Path
 
+os.environ["TOOLBOX_VARIANT"] = "web"
+
 # PyInstaller 打包后，捆绑的 ffmpeg.exe / ffprobe.exe 与主程序同目录，
 # 但 Windows 双击运行时不会自动把该目录加入 PATH。这里主动注入。
 if getattr(sys, "frozen", False):
