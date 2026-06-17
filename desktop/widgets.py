@@ -168,14 +168,6 @@ class VideoCard(QFrame):
         title.setProperty("role", "title")
         title.setWordWrap(True)
         info.addWidget(title)
-
-        url_text = self.video.get("url", "")
-        url = QLabel(url_text)
-        url.setProperty("role", "hint")
-        url.setWordWrap(True)
-        url.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        url.setToolTip(url_text)
-        info.addWidget(url)
         layout.addLayout(info, 1)
 
         quality = self.video.get("quality")
