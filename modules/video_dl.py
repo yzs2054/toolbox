@@ -78,37 +78,39 @@ def _fetch(url: str, headers: dict) -> str:
 
 
 def _extract_baidu_haokan(url: str) -> list[dict]:
-    """百度新闻视频落地页 → 走好看视频侧拉直链。
+    """百度新闻视频落地页 → 走好看视频 JSON API 拿多路清晰度直链。
 
-    mbd.baidu.com/newspage/data/videolanding 反爬极重（IP 层验证码），
-    但同一个 nid 在 haokan.baidu.com 是公开页，HTML 里直接含多路清晰度 mp4 直链。
+    mbd.baidu.com/newspage/data/videolanding 反爬极重（IP 层验证码）。
+    同一个 nid 在 haokan.baidu.com 是公开页，且 ?_format=json 直接返回 JSON，
+    路径 data.apiData.curVideoMeta.clarityUrl[] 含多路清晰度 mp4 直链。
     """
     parsed = urlparse(url)
     nid = parse_qs(parsed.query).get("nid", [None])[0]
     if not nid:
         return []
 
-    html = _fetch(
-        f"https://haokan.baidu.com/v?vid={nid}",
-        headers={"User-Agent": _DESKTOP_UA},
-    )
+    try:
+        resp = requests.get(
+            f"https://haokan.baidu.com/v?vid={nid}&_format=json",
+            headers={"User-Agent": _DESKTOP_UA},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
 
-    titles = re.findall(r'"title":"([^"]+)"', html)
-    main_title = titles[0] if titles else "baidu_video"
+    meta = (data.get("data") or {}).get("apiData", {}).get("curVideoMeta") or {}
+    main_title = meta.get("title") or "baidu_video"
 
     videos: list[dict] = []
     seen: set[str] = set()
-    for m in re.finditer(r'"url":"(https://vdept[^"]+\.mp4[^"]*)"', html):
-        quality = "?"
-        ctx = html[max(0, m.start() - 200):m.start()]
-        ctx_titles = re.findall(r'"title":"([^"]+)"', ctx)
-        if ctx_titles:
-            quality = ctx_titles[-1]
-
-        video_url = m.group(1).replace("\\u0026", "&")
-        if video_url in seen:
+    for c in meta.get("clarityUrl", []) or []:
+        video_url = c.get("url") or ""
+        if not video_url or video_url in seen:
             continue
         seen.add(video_url)
+        quality = c.get("title") or c.get("key") or "?"
         videos.append({
             "type": "direct",
             "url": video_url,

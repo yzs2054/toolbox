@@ -52,7 +52,7 @@ class TaskCard(QFrame):
         top.setSpacing(8)
         self.title_label = QLabel()
         self.title_label.setProperty("role", "title")
-        self.title_label.setWordWrap(False)
+        self.title_label.setWordWrap(True)
         top.addWidget(self.title_label, 1)
 
         self.badge_label = QLabel()
@@ -63,7 +63,7 @@ class TaskCard(QFrame):
         # 第二行：源/输出文件名
         self.subtitle_label = QLabel()
         self.subtitle_label.setProperty("role", "muted")
-        self.subtitle_label.setWordWrap(False)
+        self.subtitle_label.setWordWrap(True)
         layout.addWidget(self.subtitle_label)
 
         # 进度条
@@ -169,10 +169,12 @@ class VideoCard(QFrame):
         title.setWordWrap(True)
         info.addWidget(title)
 
-        url = QLabel(self.video.get("url", ""))
+        url_text = self.video.get("url", "")
+        url = QLabel(url_text)
         url.setProperty("role", "hint")
-        url.setWordWrap(False)
+        url.setWordWrap(True)
         url.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        url.setToolTip(url_text)
         info.addWidget(url)
         layout.addLayout(info, 1)
 
