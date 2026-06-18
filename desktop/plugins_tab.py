@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -64,6 +63,14 @@ class PluginCard(QWidget):
         self.version_label.setProperty("role", "muted")
         self.version_label.setWordWrap(True)
         layout.addWidget(self.version_label)
+
+        # 来源链接
+        self.repo_label = QLabel()
+        self.repo_label.setProperty("role", "hint")
+        self.repo_label.setOpenExternalLinks(True)
+        self.repo_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        self.repo_label.setVisible(False)
+        layout.addWidget(self.repo_label)
 
         # 描述
         self.desc_label = QLabel()
@@ -127,6 +134,17 @@ class PluginCard(QWidget):
         if has_update:
             version_parts.append("可更新")
         self.version_label.setText("  ·  ".join(version_parts))
+
+        repo_url = p.get("repo_url") or ""
+        if repo_url:
+            short = repo_url.replace("https://github.com/", "").replace("http://github.com/", "")
+            # 蓝色链接，点击用系统浏览器打开
+            self.repo_label.setText(
+                f'来源: <a href="{repo_url}" style="color:#60a5fa;">{short}</a>'
+            )
+            self.repo_label.setVisible(True)
+        else:
+            self.repo_label.setVisible(False)
 
         desc = p.get("description") or ""
         self.desc_label.setText(desc)
@@ -227,18 +245,6 @@ class PluginsTab(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        # 顶部：URL + 添加按钮
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("粘贴 GitHub 仓库地址，如 https://github.com/ltaoo/wx_channels_download")
-        top.addWidget(self.url_input, 1)
-        self.add_btn = QPushButton("添加插件")
-        self.add_btn.setCursor(Qt.PointingHandCursor)
-        self.add_btn.clicked.connect(self._on_add)
-        top.addWidget(self.add_btn)
-        layout.addLayout(top)
-
         # 错误条
         self.error_label = QLabel()
         self.error_label.setStyleSheet("color:#fca5a5;background:#7f1d1d;padding:8px;border-radius:4px;")
@@ -260,24 +266,6 @@ class PluginsTab(QWidget):
         self.list_layout.addStretch(1)
         self.scroll.setWidget(inner)
         layout.addWidget(self.scroll, 1)
-
-    def _on_add(self):
-        url = self.url_input.text().strip()
-        if not url:
-            return
-        self.error_label.setVisible(False)
-        self.add_btn.setEnabled(False)
-        self.add_btn.setText("添加中...")
-        try:
-            plugins.add_repo(url)
-            self.url_input.clear()
-            self._reload()
-        except Exception as e:
-            self.error_label.setText(str(e))
-            self.error_label.setVisible(True)
-        finally:
-            self.add_btn.setEnabled(True)
-            self.add_btn.setText("添加插件")
 
     def _reload(self):
         items = plugins.list_plugins()

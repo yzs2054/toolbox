@@ -26,7 +26,7 @@ from .subprocess_util import NO_WINDOW
 
 DATA_DIR = Path("data")
 PLUGINS_DIR = Path("plugins")
-STATE_FILE = DATA_DIR / "plugins_state.json"
+STATE_FILE = PLUGINS_DIR / "state.json"
 PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
 
 # check_updates 缓存：避免在 1s 轮询里狂打 GitHub API（未鉴权 60/hr 限流）
@@ -241,14 +241,27 @@ def _clear_progress(pid: str) -> None:
         _install_progress.pop(pid, None)
 
 
-def _stream_download(url: str, pid: str) -> bytes:
-    """流式下载，边下边写进度。返回完整 bytes。失败抛异常。"""
+def _stream_download(url: str, pid: str, stall_timeout: int = 15) -> bytes:
+    """流式下载，边下边写进度。失败抛异常。
+
+    stall_timeout：单次 iter_content 阻塞超过 N 秒就抛 TimeoutError。
+    解决"连接活着但偶尔吐 1 byte 永不触发 read timeout"的慢镜像——
+    每次取一块 64KB 都卡住 N 秒，说明镜像本身在拖。
+    """
     resp = requests.get(url, stream=True, timeout=(10, 30))
     resp.raise_for_status()
     total = int(resp.headers.get("content-length", 0))
     buf = bytearray()
     done = 0
-    for chunk in resp.iter_content(64 * 1024):
+    it = resp.iter_content(64 * 1024)
+    while True:
+        iter_start = time.time()
+        try:
+            chunk = next(it)
+        except StopIteration:
+            break
+        if time.time() - iter_start > stall_timeout:
+            raise TimeoutError(f"下载停滞超过 {stall_timeout}s")
         if not chunk:
             continue
         buf.extend(chunk)

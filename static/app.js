@@ -784,6 +784,11 @@ function pluginCardHtml(p) {
   const running = p.status === 'running';
   const platforms = (p.platforms || []).join(' / ') || '未声明';
   const desc = p.description || '';
+  const repoUrl = p.repo_url || '';
+  const repoShort = repoUrl ? repoUrl.replace(/^https?:\/\/github\.com\//, '') : '';
+  const repoLink = repoUrl
+    ? `<a href="${escapeHtml(repoUrl)}" target="_blank" rel="noopener" class="text-blue-400 hover:underline">${escapeHtml(repoShort)}</a>`
+    : '';
   const errMsg = p.last_error ? `<div class="text-xs text-red-400 mt-1">${escapeHtml(p.last_error)}</div>` : '';
 
   const installProg = p.install_progress || {};
@@ -825,6 +830,7 @@ function pluginCardHtml(p) {
           当前版本：<span class="text-gray-300">${escapeHtml(installed || '—')}</span>
           ${latest ? ` · 最新版本：<span class="text-gray-300">${escapeHtml(latest)}</span>` : ''}
           ${hasUpdate ? ' · <span class="text-yellow-400">可更新</span>' : ''}
+          ${repoLink ? ` · 来源：${repoLink}` : ''}
         </div>
         ${desc ? `<div class="text-xs text-gray-500 mt-1">${escapeHtml(desc)}</div>` : ''}
       </div>
@@ -893,33 +899,6 @@ function showPluginError(msg) {
 
 function clearPluginError() {
   $('plugin-error').classList.add('hidden');
-}
-
-async function addPlugin() {
-  const url = $('plugin-url').value.trim();
-  if (!url) return;
-  clearPluginError();
-  $('btn-add-plugin').disabled = true;
-  $('btn-add-plugin').textContent = '添加中...';
-  try {
-    const resp = await fetch('/api/plugins/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repo_url: url }),
-    });
-    const data = await resp.json();
-    if (data.error) {
-      showPluginError(data.error);
-      return;
-    }
-    $('plugin-url').value = '';
-    loadPlugins();
-  } catch (e) {
-    showPluginError('请求失败: ' + e.message);
-  } finally {
-    $('btn-add-plugin').disabled = false;
-    $('btn-add-plugin').textContent = '添加插件';
-  }
 }
 
 async function installPlugin(id) {
