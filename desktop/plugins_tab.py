@@ -41,69 +41,44 @@ class PluginCard(QWidget):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
 
-        # 顶部：name + 平台 badge + 状态 badge
-        top = QHBoxLayout()
-        top.setSpacing(8)
+        # 主行：name + 版本 + 状态 + 按钮组（一行搞定）
+        row = QHBoxLayout()
+        row.setSpacing(10)
+
         self.name_label = QLabel()
         self.name_label.setProperty("role", "title")
-        self.name_label.setWordWrap(True)
-        top.addWidget(self.name_label, 1)
+        row.addWidget(self.name_label)
 
-        self.platform_label = QLabel()
-        self.platform_label.setProperty("role", "muted")
-        top.addWidget(self.platform_label, 0, Qt.AlignRight)
+        self.version_label = QLabel()
+        self.version_label.setProperty("role", "muted")
+        row.addWidget(self.version_label)
 
         self.status_label = QLabel()
         self.status_label.setProperty("role", "badge")
-        top.addWidget(self.status_label, 0, Qt.AlignRight)
-        layout.addLayout(top)
+        row.addWidget(self.status_label)
 
-        # 版本信息
-        self.version_label = QLabel()
-        self.version_label.setProperty("role", "muted")
-        self.version_label.setWordWrap(True)
-        layout.addWidget(self.version_label)
+        row.addStretch(1)
 
-        # 来源链接
-        self.repo_label = QLabel()
-        self.repo_label.setProperty("role", "hint")
-        self.repo_label.setOpenExternalLinks(True)
-        self.repo_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        self.repo_label.setVisible(False)
-        layout.addWidget(self.repo_label)
-
-        # 描述
-        self.desc_label = QLabel()
-        self.desc_label.setProperty("role", "hint")
-        self.desc_label.setWordWrap(True)
-        self.desc_label.setVisible(False)
-        layout.addWidget(self.desc_label)
-
-        # 错误
-        self.error_label = QLabel()
-        self.error_label.setStyleSheet("color:#fca5a5;")
-        self.error_label.setWordWrap(True)
-        self.error_label.setVisible(False)
-        layout.addWidget(self.error_label)
-
-        # 安装进度
-        self.progress_label = QLabel()
-        self.progress_label.setProperty("role", "hint")
-        self.progress_label.setVisible(False)
-        layout.addWidget(self.progress_label)
-
-        # 按钮行
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
         self.start_btn = self._mk_btn("启动", "success", self._on_start)
         self.stop_btn = self._mk_btn("停止", "danger", self._on_stop)
         self.install_btn = self._mk_btn("安装", None, self._on_install)
         self.update_btn = self._mk_btn("更新", "warning", self._on_update)
         self.remove_btn = self._mk_btn("删除", "secondary", self._on_remove)
         for b in (self.start_btn, self.stop_btn, self.install_btn, self.update_btn, self.remove_btn):
-            btn_row.addWidget(b)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
+            row.addWidget(b)
+        layout.addLayout(row)
+
+        # 错误 / 安装进度（仅在相关时显示）
+        self.error_label = QLabel()
+        self.error_label.setStyleSheet("color:#fca5a5;")
+        self.error_label.setWordWrap(True)
+        self.error_label.setVisible(False)
+        layout.addWidget(self.error_label)
+
+        self.progress_label = QLabel()
+        self.progress_label.setProperty("role", "hint")
+        self.progress_label.setVisible(False)
+        layout.addWidget(self.progress_label)
 
     def _mk_btn(self, text: str, variant: str | None, slot) -> QPushButton:
         btn = QPushButton(text)
@@ -115,7 +90,6 @@ class PluginCard(QWidget):
 
     def refresh(self, p: dict):
         self.name_label.setText(p.get("name") or p["id"])
-        self.platform_label.setText(" / ".join(p.get("platforms") or []) or "未声明")
 
         status = p.get("status", "")
         text, color = _STATUS_META.get(status, ("", "#9ca3af"))
@@ -125,30 +99,17 @@ class PluginCard(QWidget):
             f"border-radius:3px;font-size:11px;"
         )
 
-        installed = p.get("installed_version") or "—"
+        installed = p.get("installed_version") or ""
         latest = p.get("latest_version") or ""
-        has_update = bool(installed) and installed != "—" and latest and installed != latest
-        version_parts = [f"当前版本: {installed}"]
-        if latest:
-            version_parts.append(f"最新: {latest}")
-        if has_update:
-            version_parts.append("可更新")
-        self.version_label.setText("  ·  ".join(version_parts))
-
-        repo_url = p.get("repo_url") or ""
-        if repo_url:
-            short = repo_url.replace("https://github.com/", "").replace("http://github.com/", "")
-            # 蓝色链接，点击用系统浏览器打开
-            self.repo_label.setText(
-                f'来源: <a href="{repo_url}" style="color:#60a5fa;">{short}</a>'
-            )
-            self.repo_label.setVisible(True)
+        has_update = bool(installed) and latest and installed != latest
+        if not installed:
+            version_text = "未安装"
+        elif has_update:
+            version_text = f"{installed} → {latest}"
         else:
-            self.repo_label.setVisible(False)
-
-        desc = p.get("description") or ""
-        self.desc_label.setText(desc)
-        self.desc_label.setVisible(bool(desc))
+            version_text = installed
+        self.version_label.setText(version_text)
+        self.version_label.setStyleSheet("color:#fbbf24;" if has_update else "color:#9ca3af;")
 
         err = p.get("last_error") or ""
         self.error_label.setText(err)

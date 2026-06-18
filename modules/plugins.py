@@ -405,7 +405,13 @@ def _install_worker(pid: str, repo: str, force: bool) -> None:
                 shutil.rmtree(plugin_dir, ignore_errors=True)
                 _clear_progress(pid)
                 return
-            rec = _state.setdefault(pid, {})
+            # 用 preset 做底，避免历史残缺记录丢字段（如 repo_url）
+            preset = next((p for p in _PRESETS if p["id"] == pid), None)
+            base = dict(preset) if preset else {}
+            rec = _state.setdefault(pid, base)
+            if preset:
+                for k, v in preset.items():
+                    rec.setdefault(k, v)
             rec["installed_version"] = latest
             rec["latest_version"] = latest
             rec["latest_checked_at"] = time.time()
@@ -627,9 +633,8 @@ def install(plugin_id: str) -> None:
     """后台下载并安装最新 Release。"""
     with _lock:
         rec = _state.get(plugin_id)
+        preset = next((p for p in _PRESETS if p["id"] == plugin_id), None)
         if not rec:
-            # 可能是 preset 还未实例化
-            preset = next((p for p in _PRESETS if p["id"] == plugin_id), None)
             if not preset:
                 raise ValueError("插件不存在")
             rec = dict(preset)
@@ -642,7 +647,14 @@ def install(plugin_id: str) -> None:
             })
             _state[plugin_id] = rec
             _save_state_locked()
-        repo = _parse_repo(rec["repo_url"])
+        elif preset:
+            # state 记录可能因历史 bug 残缺（缺 repo_url 等），用 preset 兜底
+            for k, v in preset.items():
+                rec.setdefault(k, v)
+        repo_url = rec.get("repo_url")
+        if not repo_url:
+            raise ValueError("插件缺少 repo_url")
+        repo = _parse_repo(repo_url)
 
     # 已在跑就别重装
     if _install_progress.get(plugin_id, {}).get("status") in ("downloading", "extracting"):
@@ -662,7 +674,14 @@ def update(plugin_id: str) -> None:
         rec = _state.get(plugin_id)
         if not rec:
             raise ValueError("插件不存在")
-        repo = _parse_repo(rec["repo_url"])
+        preset = next((p for p in _PRESETS if p["id"] == plugin_id), None)
+        if preset:
+            for k, v in preset.items():
+                rec.setdefault(k, v)
+        repo_url = rec.get("repo_url")
+        if not repo_url:
+            raise ValueError("插件缺少 repo_url")
+        repo = _parse_repo(repo_url)
 
     if _install_progress.get(plugin_id, {}).get("status") in ("downloading", "extracting"):
         return

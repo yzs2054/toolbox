@@ -782,13 +782,6 @@ function pluginCardHtml(p) {
   const hasUpdate = installed && latest && installed !== latest;
   const installing = p.status === 'installing';
   const running = p.status === 'running';
-  const platforms = (p.platforms || []).join(' / ') || '未声明';
-  const desc = p.description || '';
-  const repoUrl = p.repo_url || '';
-  const repoShort = repoUrl ? repoUrl.replace(/^https?:\/\/github\.com\//, '') : '';
-  const repoLink = repoUrl
-    ? `<a href="${escapeHtml(repoUrl)}" target="_blank" rel="noopener" class="text-blue-400 hover:underline">${escapeHtml(repoShort)}</a>`
-    : '';
   const errMsg = p.last_error ? `<div class="text-xs text-red-400 mt-1">${escapeHtml(p.last_error)}</div>` : '';
 
   const installProg = p.install_progress || {};
@@ -819,26 +812,20 @@ function pluginCardHtml(p) {
     btn('删除', '',        `removePlugin('${escapeHtml(p.id)}')`, installing),
   ].join(' ');
 
+  const versionText = installed
+    ? (hasUpdate ? `v${installed.replace(/^v/, '')} → v${latest.replace(/^v/, '')}` : installed)
+    : '未安装';
+
   return `
-    <div class="flex items-start justify-between gap-3 flex-wrap">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-sm font-medium text-gray-200">${escapeHtml(p.name || p.id)}</span>
-          <span class="bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded text-xs">${escapeHtml(platforms)}</span>
-        </div>
-        <div class="text-xs text-gray-500 mt-1">
-          当前版本：<span class="text-gray-300">${escapeHtml(installed || '—')}</span>
-          ${latest ? ` · 最新版本：<span class="text-gray-300">${escapeHtml(latest)}</span>` : ''}
-          ${hasUpdate ? ' · <span class="text-yellow-400">可更新</span>' : ''}
-          ${repoLink ? ` · 来源：${repoLink}` : ''}
-        </div>
-        ${desc ? `<div class="text-xs text-gray-500 mt-1">${escapeHtml(desc)}</div>` : ''}
-      </div>
-      <span class="text-xs ${statusColor} whitespace-nowrap shrink-0 mt-1">${statusText}</span>
+    <div class="flex items-center gap-3 flex-wrap">
+      <span class="font-medium text-gray-200">${escapeHtml(p.name || p.id)}</span>
+      <span class="text-xs ${hasUpdate ? 'text-yellow-400' : 'text-gray-500'}">${escapeHtml(versionText)}</span>
+      <span class="text-xs ${statusColor}">${statusText}</span>
+      <div class="flex-1"></div>
+      <div class="flex gap-2 flex-wrap">${btns}</div>
     </div>
     ${progressBar}
     ${errMsg}
-    <div class="flex gap-2 mt-3 flex-wrap">${btns}</div>
   `;
 }
 
