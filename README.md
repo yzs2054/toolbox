@@ -14,6 +14,7 @@
 | 视频下载   | 从网页提取视频并下载，支持微信公众号（腾讯视频 iframe）、百度新闻视频（好看视频侧拉直链）、mpvideo 直链、HTML5 `<video>`、mp4/m3u8 直链 |
 | 视频转 MP3 | 上传视频文件，ffmpeg 转 192 kbps MP3，带进度条                                                                                          |
 | 视频转码   | 上传视频文件，转 H.264 / H.265 / VP9，可选分辨率（1080p/720p/480p）与质量档位（CRF 18/23/28）                                           |
+| 插件管理   | 外部可执行程序宿主：从 GitHub Release 下载第三方工具、解压到本地、启停进程、显示状态。内置微信视频号下载插件                            |
 | 系统信息   | 显示 OS / Python / CPU / ffmpeg / yt-dlp 版本 / 存储用量 / 功能列表 / 软件更新                                                          |
 
 特性：
@@ -102,13 +103,13 @@ python main.py
 │   ├── video_dl.py         # 视频提取与下载
 │   ├── audio_extract.py    # 视频转 MP3
 │   ├── video_transcode.py  # 视频转码
+│   ├── plugins.py          # 插件管理（外部 exe 宿主）
 │   ├── system_info.py      # 系统信息收集
 │   ├── file_ops.py         # reveal_in_file_manager 等工具
-│   ├── updater.py          # 自动更新（含 variant 检测）
-│   └── channels_dl.py      # 视频号解析（未接入 UI）
+│   └── updater.py          # 自动更新（含 variant 检测）
 ├── desktop/                # Desktop UI（PySide6）
 │   ├── main_window.py      # QMainWindow + QTabWidget
-│   ├── video_tab.py / audio_tab.py / transcode_tab.py / system_tab.py
+│   ├── video_tab.py / audio_tab.py / transcode_tab.py / plugins_tab.py / system_tab.py
 │   ├── widgets.py          # TaskCard / VideoCard / Dropzone
 │   └── style.qss           # 暗色 Qt 样式
 ├── templates/index.html    # Web 版单页面
@@ -117,7 +118,10 @@ python main.py
 │   ├── downloads/          # 视频下载
 │   ├── audio/              # MP3 转换
 │   ├── video_transcode/    # 视频转码
+│   ├── plugins_state.json  # 插件元信息与启用状态
 │   └── _uploads/           # Web 版上传临时目录
+├── plugins/                # 插件解压目录（gitignored，自动生成）
+│   └── <plugin_id>/        # 每个插件一个子目录，含可执行文件
 └── docs/
     ├── design.md           # 架构与 API 设计
     ├── progress.md         # 版本进度
@@ -156,7 +160,45 @@ git push --tags
 ## 已知限制
 
 - PyInstaller 打的 exe 在 Windows Defender 下偶有误报，计划换 Nuitka
-- 视频号解析模块 `channels_dl.py` 依赖 Cookie，尚未接入 Web UI
 - 音频码率固定 192 kbps，未暴露选项
 - 视频转码未启用硬件加速（NVENC / VideoToolbox）
 - 百度视频直链 `auth_key` 有时效，过期的历史链接无法继续下载
+- 微信视频号插件仅在 Windows + 微信 PC 客户端环境下可用，且首次启动需管理员权限（UAC 弹窗）安装根证书
+
+## 第三方组件声明
+
+本工具箱的「插件管理」模块会从用户指定的 GitHub Release 下载并运行第三方可执行程序。这些第三方程序是**独立项目**，与本工具箱无任何归属或附属关系，本工具箱不对其功能、安全性、合法性、合规性做任何担保。
+
+### 内置预设插件
+
+| 插件 | 来源 | 用途 | 协议 |
+|------|------|------|------|
+| 微信视频号下载 | [ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download) | 通过本地 HTTPS 代理拦截微信 PC 客户端的视频号流量并解密保存 | 见仓库 LICENSE |
+
+**使用前请注意**：
+- 该插件由 `ltaoo/wx_channels_download` 项目作者独立维护，本工具箱仅提供下载、安装、启停的宿主能力
+- 启动后该插件会以管理员权限安装根证书到系统，请知悉风险后再启用
+- 该插件仅用于技术学习与研究，请遵守所在地区的法律法规，不要用于任何违反法律或他人权益的用途
+- 用户与第三方插件作者之间的使用关系由该插件的 LICENSE 与声明约束，本工具箱不介入
+
+### 致谢
+
+本工具箱的视频号下载能力直接建立在以下开源项目之上，作者无偿分享了核心的流量拦截与解密实现，特此致谢：
+
+- **[ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download)** —— 微信视频号下载器，提供了拦截微信 PC 客户端视频流并解密保存的完整方案。本工具箱通过插件管理机制以独立进程方式调用其 Release 构建，未对其源码做任何修改或重打包。
+
+同时也感谢这些让本工具箱得以实现的上游项目：[yt-dlp](https://github.com/yt-dlp/yt-dlp)、[FFmpeg](https://ffmpeg.org/)、[PySide6](https://www.qt.io/)、[Flask](https://flask.palletsprojects.com/)。
+
+### 用户自添加的插件
+
+通过插件管理页面输入 GitHub 仓库地址添加的插件，由用户自行承担一切使用风险。本工具箱不会校验这些插件的安全性，请在添加前自行审查仓库内容与作者信誉。
+
+### 免责声明
+
+```
+本工具箱为开源项目
+仅用于技术交流学习和研究的目的
+请遵守法律法规，请勿用作任何非法用途
+否则造成一切后果自负
+若您下载并使用即视为您知晓并同意
+```

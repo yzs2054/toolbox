@@ -123,6 +123,12 @@ QPushButton[variant="success"]:hover {
 QPushButton[variant="danger"] {
   background: #dc2626;
 }
+QPushButton[variant="warning"] {
+  background: #ca8a04;
+}
+QPushButton[variant="warning"]:hover {
+  background: #a16207;
+}
 
 /* 进度条 */
 QProgressBar {

@@ -422,6 +422,7 @@ function switchTab(name) {
 loadTasks();
 loadAudioTasks();
 loadTranscodeTasks();
+loadPlugins();
 loadSystemInfo();
 
 // ========== 音频提取 ==========
@@ -760,4 +761,243 @@ function startTranscodePolling(taskId) {
     }
   };
   poll();
+}
+
+// ========== 插件管理 ==========
+
+let pluginPollTimer = null;
+
+const PLUGIN_STATUS_META = {
+  not_installed: ['未安装', 'text-gray-400'],
+  installed:     ['已停止', 'text-gray-400'],
+  installing:    ['安装中', 'text-blue-400'],
+  running:       ['运行中', 'text-green-400'],
+  error:         ['失败',   'text-red-400'],
+};
+
+function pluginCardHtml(p) {
+  const [statusText, statusColor] = PLUGIN_STATUS_META[p.status] || ['', 'text-gray-400'];
+  const installed = p.installed_version || '';
+  const latest = p.latest_version || '';
+  const hasUpdate = installed && latest && installed !== latest;
+  const installing = p.status === 'installing';
+  const running = p.status === 'running';
+  const platforms = (p.platforms || []).join(' / ') || '未声明';
+  const desc = p.description || '';
+  const errMsg = p.last_error ? `<div class="text-xs text-red-400 mt-1">${escapeHtml(p.last_error)}</div>` : '';
+
+  const installProg = p.install_progress || {};
+  const progPct = installing ? (installProg.progress || 0) : 0;
+  const progMsg = installing ? (installProg.message || '') : '';
+  const progressBar = installing ? `
+    <div class="progress-bar mt-2">
+      <div class="progress-fill" style="width: ${progPct}%"></div>
+    </div>
+    <div class="text-xs text-gray-500 mt-1">${escapeHtml(progMsg)}</div>
+  ` : '';
+
+  const btn = (label, variant, onclick, disabled) => `
+    <button onclick="${onclick}" ${disabled ? 'disabled' : ''}
+      class="px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
+        variant === 'primary'   ? 'bg-blue-600 hover:bg-blue-700 text-white' :
+        variant === 'success'   ? 'bg-green-600 hover:bg-green-700 text-white' :
+        variant === 'warning'   ? 'bg-yellow-600 hover:bg-yellow-700 text-white' :
+        variant === 'danger'    ? 'bg-red-700 hover:bg-red-800 text-white' :
+                                  'bg-gray-700 hover:bg-gray-600 text-gray-200'
+      } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}">${label}</button>`;
+
+  const btns = [
+    btn('启动', 'success', `startPlugin('${escapeHtml(p.id)}')`, installing || running || p.status === 'not_installed'),
+    btn('停止', 'danger',  `stopPlugin('${escapeHtml(p.id)}')`,  !running),
+    btn('安装', 'primary', `installPlugin('${escapeHtml(p.id)}')`, installing || installed),
+    btn('更新', 'warning', `updatePlugin('${escapeHtml(p.id)}')`, installing || !hasUpdate),
+    btn('删除', '',        `removePlugin('${escapeHtml(p.id)}')`, installing),
+  ].join(' ');
+
+  return `
+    <div class="flex items-start justify-between gap-3 flex-wrap">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-sm font-medium text-gray-200">${escapeHtml(p.name || p.id)}</span>
+          <span class="bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded text-xs">${escapeHtml(platforms)}</span>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">
+          当前版本：<span class="text-gray-300">${escapeHtml(installed || '—')}</span>
+          ${latest ? ` · 最新版本：<span class="text-gray-300">${escapeHtml(latest)}</span>` : ''}
+          ${hasUpdate ? ' · <span class="text-yellow-400">可更新</span>' : ''}
+        </div>
+        ${desc ? `<div class="text-xs text-gray-500 mt-1">${escapeHtml(desc)}</div>` : ''}
+      </div>
+      <span class="text-xs ${statusColor} whitespace-nowrap shrink-0 mt-1">${statusText}</span>
+    </div>
+    ${progressBar}
+    ${errMsg}
+    <div class="flex gap-2 mt-3 flex-wrap">${btns}</div>
+  `;
+}
+
+async function loadPlugins() {
+  try {
+    const resp = await fetch('/api/plugins/list');
+    const data = await resp.json();
+    const items = data.items || [];
+    _renderPluginList(items);
+    // 仍在安装中的插件继续轮询
+    if (items.some(p => p.status === 'installing') && !pluginPollTimer) {
+      pluginPollTimer = setTimeout(() => {
+        pluginPollTimer = null;
+        loadPlugins();
+      }, 1000);
+    }
+    // 异步检查更新（后端 10 分钟缓存，几乎零成本），拿到最新版后再刷一次
+    if (!_pluginUpdateChecking) {
+      _pluginUpdateChecking = true;
+      fetch('/api/plugins/check_updates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).then(() => fetch('/api/plugins/list'))
+        .then(r => r.json())
+        .then(d => _renderPluginList(d.items || []))
+        .catch(() => {})
+        .finally(() => { _pluginUpdateChecking = false; });
+    }
+  } catch (e) {
+    // 静默
+  }
+}
+
+let _pluginUpdateChecking = false;
+
+function _renderPluginList(items) {
+  const list = $('plugin-list');
+  list.innerHTML = '';
+  if (items.length === 0) {
+    list.innerHTML = '<div class="text-xs text-gray-500 text-center py-6">还没有插件，输入 GitHub 仓库地址添加。</div>';
+    return;
+  }
+  items.forEach(p => {
+    const card = document.createElement('div');
+    card.id = 'plugin-' + p.id;
+    card.className = 'bg-gray-800 border border-gray-700 rounded-lg p-4';
+    card.innerHTML = pluginCardHtml(p);
+    list.appendChild(card);
+  });
+}
+
+function showPluginError(msg) {
+  const el = $('plugin-error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function clearPluginError() {
+  $('plugin-error').classList.add('hidden');
+}
+
+async function addPlugin() {
+  const url = $('plugin-url').value.trim();
+  if (!url) return;
+  clearPluginError();
+  $('btn-add-plugin').disabled = true;
+  $('btn-add-plugin').textContent = '添加中...';
+  try {
+    const resp = await fetch('/api/plugins/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo_url: url }),
+    });
+    const data = await resp.json();
+    if (data.error) {
+      showPluginError(data.error);
+      return;
+    }
+    $('plugin-url').value = '';
+    loadPlugins();
+  } catch (e) {
+    showPluginError('请求失败: ' + e.message);
+  } finally {
+    $('btn-add-plugin').disabled = false;
+    $('btn-add-plugin').textContent = '添加插件';
+  }
+}
+
+async function installPlugin(id) {
+  clearPluginError();
+  try {
+    const resp = await fetch('/api/plugins/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await resp.json();
+    if (data.error) { showPluginError(data.error); return; }
+    loadPlugins();
+  } catch (e) {
+    showPluginError('请求失败: ' + e.message);
+  }
+}
+
+async function updatePlugin(id) {
+  clearPluginError();
+  try {
+    const resp = await fetch('/api/plugins/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await resp.json();
+    if (data.error) { showPluginError(data.error); return; }
+    loadPlugins();
+  } catch (e) {
+    showPluginError('请求失败: ' + e.message);
+  }
+}
+
+async function startPlugin(id) {
+  clearPluginError();
+  try {
+    const resp = await fetch('/api/plugins/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await resp.json();
+    if (data.error) { showPluginError(data.error); return; }
+    // 启动是非阻塞的，稍等一下再刷新状态
+    setTimeout(loadPlugins, 300);
+  } catch (e) {
+    showPluginError('请求失败: ' + e.message);
+  }
+}
+
+async function stopPlugin(id) {
+  clearPluginError();
+  try {
+    await fetch('/api/plugins/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    setTimeout(loadPlugins, 300);
+  } catch (e) {
+    showPluginError('请求失败: ' + e.message);
+  }
+}
+
+async function removePlugin(id) {
+  if (!confirm('删除该插件？会停止进程并清理本地文件。')) return;
+  clearPluginError();
+  try {
+    const resp = await fetch('/api/plugins/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const data = await resp.json();
+    if (data.error) { showPluginError(data.error); return; }
+    loadPlugins();
+  } catch (e) {
+    showPluginError('请求失败: ' + e.message);
+  }
 }

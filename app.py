@@ -21,6 +21,7 @@ from modules import audio_extract
 from modules import video_transcode
 from modules import system_info
 from modules import updater
+from modules import plugins
 from modules.file_ops import reveal_in_file_manager
 
 VERSION = updater.get_current_version()
@@ -186,6 +187,104 @@ def api_start_update():
 @app.route("/api/update/progress", methods=["GET"])
 def api_update_progress():
     return jsonify(updater.get_progress())
+
+
+# -------- 插件管理 --------
+
+@app.route("/api/plugins/list", methods=["GET"])
+def api_plugins_list():
+    return jsonify({"items": plugins.list_plugins()})
+
+
+@app.route("/api/plugins/add", methods=["POST"])
+def api_plugins_add():
+    data = request.get_json(force=True) or {}
+    url = (data.get("repo_url") or "").strip()
+    if not url:
+        return jsonify({"error": "请输入 GitHub 仓库地址"}), 400
+    try:
+        rec = plugins.add_repo(url)
+        return jsonify({"item": rec})
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 400
+
+
+@app.route("/api/plugins/install", methods=["POST"])
+def api_plugins_install():
+    pid = (request.get_json(force=True) or {}).get("id")
+    if not pid:
+        return jsonify({"error": "参数缺失"}), 400
+    try:
+        plugins.install(pid)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 400
+
+
+@app.route("/api/plugins/update", methods=["POST"])
+def api_plugins_update():
+    pid = (request.get_json(force=True) or {}).get("id")
+    if not pid:
+        return jsonify({"error": "参数缺失"}), 400
+    try:
+        plugins.update(pid)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 400
+
+
+@app.route("/api/plugins/start", methods=["POST"])
+def api_plugins_start():
+    pid = (request.get_json(force=True) or {}).get("id")
+    if not pid:
+        return jsonify({"error": "参数缺失"}), 400
+    try:
+        plugins.start(pid)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@app.route("/api/plugins/stop", methods=["POST"])
+def api_plugins_stop():
+    pid = (request.get_json(force=True) or {}).get("id")
+    if not pid:
+        return jsonify({"error": "参数缺失"}), 400
+    plugins.stop(pid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/plugins/remove", methods=["POST"])
+def api_plugins_remove():
+    pid = (request.get_json(force=True) or {}).get("id")
+    if not pid:
+        return jsonify({"error": "参数缺失"}), 400
+    try:
+        plugins.remove(pid)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 400
+
+
+@app.route("/api/plugins/status", methods=["GET"])
+def api_plugins_status():
+    pid = request.args.get("id")
+    try:
+        return jsonify(plugins.get_status(pid))
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 404
+
+
+@app.route("/api/plugins/check_updates", methods=["POST"])
+def api_plugins_check_updates():
+    data = request.get_json(force=True) or {}
+    pid = data.get("id")
+    force = bool(data.get("force", False))
+    try:
+        out = plugins.check_updates(pid, force=force)
+        return jsonify({"latest": out, "items": plugins.list_plugins()})
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 400
 
 
 def _open_browser(port: int):

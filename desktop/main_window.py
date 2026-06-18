@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QMainWindow, QTabWidget
 from desktop.about_dialog import AboutDialog
 from desktop.audio_tab import AudioTab
 from desktop.icon import make_app_icon
+from desktop.plugins_tab import PluginsTab
 from desktop.transcode_tab import TranscodeTab
 from desktop.video_tab import VideoTab
 
@@ -22,9 +23,11 @@ class MainWindow(QMainWindow):
         self.video_tab = VideoTab()
         self.audio_tab = AudioTab()
         self.transcode_tab = TranscodeTab()
+        self.plugins_tab = PluginsTab()
         self.tabs.addTab(self.video_tab, "视频下载")
         self.tabs.addTab(self.audio_tab, "音频提取")
         self.tabs.addTab(self.transcode_tab, "视频转码")
+        self.tabs.addTab(self.plugins_tab, "插件管理")
         self.setCentralWidget(self.tabs)
 
         file_menu = self.menuBar().addMenu("文件(&F)")
