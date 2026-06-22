@@ -286,7 +286,7 @@ def _record_view(rec: dict) -> dict:
 
     out = dict(rec)
     out["status"] = status
-    out["running_pid"] = proc.pid if running else None
+    out["running_pid"] = getattr(proc, "pid", None) if running else None
     out["install_progress"] = _install_progress.get(pid)
     return out
 
@@ -751,11 +751,12 @@ def start(plugin_id: str) -> None:
 
 
 class _ElevatedSentinel:
-    """ShellExecuteW 启动的进程占位对象，poll() 永远返回 0（无法判断），
-    terminate()/kill() 用 taskkill 兜底。"""
+    """ShellExecuteW 启动的进程占位对象，poll() 永远返回 None（无法判断），
+    terminate()/kill() 用 taskkill 兜底。pid 为 None（ShellExecuteW 拿不到）。"""
 
     def __init__(self, image_name: str):
         self.image_name = image_name
+        self.pid = None  # _record_view 会读 proc.pid
 
     def poll(self):
         return None  # 视为仍在运行
