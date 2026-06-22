@@ -423,6 +423,7 @@ loadTasks();
 loadAudioTasks();
 loadTranscodeTasks();
 loadPlugins();
+loadPluginProxy();
 loadSystemInfo();
 
 // ========== 音频提取 ==========
@@ -810,6 +811,7 @@ function pluginCardHtml(p) {
     btn('安装', 'primary', `installPlugin('${escapeHtml(p.id)}')`, installing || installed),
     btn('更新', 'warning', `updatePlugin('${escapeHtml(p.id)}')`, installing || !hasUpdate),
     btn('删除', '',        `removePlugin('${escapeHtml(p.id)}')`, installing),
+    p.description ? btn('说明', '', `showPluginUsage('${escapeHtml(p.id)}')`, false) : '',
   ].join(' ');
 
   const versionText = installed
@@ -834,6 +836,7 @@ async function loadPlugins() {
     const resp = await fetch('/api/plugins/list');
     const data = await resp.json();
     const items = data.items || [];
+    _pluginItemsCache = items;
     _renderPluginList(items);
     // 仍在安装中的插件继续轮询
     if (items.some(p => p.status === 'installing') && !pluginPollTimer) {
@@ -861,6 +864,54 @@ async function loadPlugins() {
 }
 
 let _pluginUpdateChecking = false;
+let _pluginItemsCache = [];
+
+function showPluginUsage(id) {
+  const p = _pluginItemsCache.find(x => x.id === id);
+  if (!p || !p.description) return;
+  const dlg = document.getElementById('plugin-usage-modal');
+  document.getElementById('plugin-usage-title').textContent = p.name || p.id;
+  document.getElementById('plugin-usage-body').textContent = p.description;
+  dlg.showModal();
+}
+
+function showTabUsage() {
+  const activeBtn = document.querySelector('.tab-btn.active');
+  if (!activeBtn || !window.USAGES) return;
+  const usage = window.USAGES[activeBtn.dataset.tab];
+  if (!usage) return;
+  const dlg = document.getElementById('tab-usage-modal');
+  document.getElementById('tab-usage-title').textContent = usage[0];
+  document.getElementById('tab-usage-body').textContent = usage[1];
+  dlg.showModal();
+}
+
+async function loadPluginProxy() {
+  try {
+    const resp = await fetch('/api/plugins/proxy');
+    const data = await resp.json();
+    const input = $('plugin-proxy');
+    if (input) input.value = data.proxy || '';
+  } catch {}
+}
+
+async function savePluginProxy() {
+  const input = $('plugin-proxy');
+  if (!input) return;
+  try {
+    const resp = await fetch('/api/plugins/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proxy: input.value.trim() }),
+    });
+    const data = await resp.json();
+    if (data.error) { showPluginError(data.error); return; }
+    input.value = data.proxy || '';
+  } catch (e) {
+    showPluginError('保存失败: ' + e.message);
+  }
+}
+
 
 function _renderPluginList(items) {
   const list = $('plugin-list');
@@ -930,8 +981,9 @@ async function startPlugin(id) {
     });
     const data = await resp.json();
     if (data.error) { showPluginError(data.error); return; }
-    // 启动是非阻塞的，稍等一下再刷新状态
-    setTimeout(loadPlugins, 300);
+    // start() 后端同步返回，_processes 已更新。立即刷 + 兜底再刷一次。
+    loadPlugins();
+    setTimeout(loadPlugins, 500);
   } catch (e) {
     showPluginError('请求失败: ' + e.message);
   }
@@ -945,7 +997,8 @@ async function stopPlugin(id) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     });
-    setTimeout(loadPlugins, 300);
+    loadPlugins();
+    setTimeout(loadPlugins, 500);
   } catch (e) {
     showPluginError('请求失败: ' + e.message);
   }

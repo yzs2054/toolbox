@@ -22,12 +22,18 @@ from urllib.parse import urlparse
 
 import requests
 
+from . import fnnas_share
 from .subprocess_util import NO_WINDOW
 
 DATA_DIR = Path("data")
 PLUGINS_DIR = Path("plugins")
 STATE_FILE = PLUGINS_DIR / "state.json"
+PROXY_FILE = PLUGINS_DIR / "proxy.json"
+FALLBACK_FILE = PLUGINS_DIR / "fallback.json"
 PLUGINS_DIR.mkdir(parents=True, exist_ok=True)
+
+# 用户配置的 HTTP 代理（仅作用于插件下载：Release metadata + asset）
+_proxy: str = ""
 
 # check_updates 缓存：避免在 1s 轮询里狂打 GitHub API（未鉴权 60/hr 限流）
 _UPDATE_CACHE_TTL = 600  # 秒
@@ -61,7 +67,18 @@ _PRESETS = [
         "platforms": ["windows"],
         "needs_admin": True,
         "exec_relpath": "wx_video_download.exe",
-        "description": "通过本地代理拦截微信 PC 客户端的视频号流量并解密保存。Windows 专用，启动需管理员权限（首次会弹 UAC 安装根证书）。",
+        "description": (
+            "通过本地代理拦截微信 PC 客户端的视频号流量并解密保存为本地 MP4 文件。\n"
+            "\n"
+            "使用步骤：\n"
+            "1. 点「安装」从 GitHub 下载（失败会自动切备用源）。\n"
+            "2. 点「启动」，首次会弹 UAC 授权——用于安装抓包用的根证书。\n"
+            "3. 授权后插件本身会弹一个新窗口，按照它自己的提示操作。\n"
+            "4. 在微信 PC 客户端里打开视频号视频，插件会自动捕获并下载。\n"
+            "5. 不用时点「停止」即可。\n"
+            "\n"
+            "注意：仅 Windows；管理员权限必需；卸载请从「删除」按钮走。"
+        ),
     },
 ]
 
@@ -99,6 +116,119 @@ def _persist() -> None:
 
 
 _load_state()
+
+
+def _load_proxy() -> None:
+    global _proxy
+    if not PROXY_FILE.exists():
+        return
+    try:
+        data = json.loads(PROXY_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            _proxy = str(data.get("proxy") or "").strip()
+    except Exception:
+        pass
+
+
+def _save_proxy_locked() -> None:
+    tmp = PROXY_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"proxy": _proxy}, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(PROXY_FILE)
+
+
+def _proxies() -> dict | None:
+    """返回 requests.get 用的 proxies 参数。无代理返回 None。"""
+    if not _proxy:
+        return None
+    return {"http": _proxy, "https": _proxy}
+
+
+def get_proxy() -> str:
+    return _proxy
+
+
+def set_proxy(url: str) -> str:
+    """设置代理。空串清空。返回设置后的值。"""
+    global _proxy
+    url = (url or "").strip()
+    with _lock:
+        _proxy = url
+        _save_proxy_locked()
+    return _proxy
+
+
+_load_proxy()
+
+
+# ---------------- 备用下载源配置（不公开：用户手动编辑 plugins/fallback.json） ----------------
+# 结构：{plugin_id: {"source": "fnos", "share_url": ..., "share_path": ..., "asset_pattern": ...}}
+_fallbacks: dict[str, dict] = {}
+
+
+def _load_fallbacks() -> None:
+    """加载 fallback.json。格式：{plugin_id: {source, share_url, share_path, asset_pattern}}。
+    出错静默忽略（文件可能用户手写到一半）。
+    """
+    if not FALLBACK_FILE.exists():
+        return
+    try:
+        data = json.loads(FALLBACK_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return
+        for pid, fb in data.items():
+            if not isinstance(fb, dict) or not pid:
+                continue
+            fb.setdefault("source", "fnos")
+            if fb.get("source") == "fnos" and fb.get("share_url") \
+                    and fb.get("share_path") and fb.get("asset_pattern"):
+                _fallbacks[pid] = fb
+    except Exception:
+        pass
+
+
+def _save_fallbacks_locked() -> None:
+    tmp = FALLBACK_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(_fallbacks, ensure_ascii=False, indent=2),
+                   encoding="utf-8")
+    tmp.replace(FALLBACK_FILE)
+
+
+def _get_fallback(pid: str) -> dict | None:
+    """取插件 fallback 配置。state 里的（用户运行时塞进来的）优先于文件。"""
+    rec = _state.get(pid) or {}
+    return rec.get("fallback") or _fallbacks.get(pid)
+
+
+def get_fallback(plugin_id: str) -> dict | None:
+    with _lock:
+        fb = _get_fallback(plugin_id)
+        return dict(fb) if fb else None
+
+
+def set_fallback(plugin_id: str, fb: dict | None) -> dict | None:
+    """设置/清空插件 fallback。fb=None 删除。返回设置后的值。"""
+    with _lock:
+        if fb is None:
+            _fallbacks.pop(plugin_id, None)
+            rec = _state.get(plugin_id)
+            if rec:
+                rec.pop("fallback", None)
+        else:
+            clean = {
+                "source": str(fb.get("source") or "fnos"),
+                "share_url": str(fb.get("share_url") or ""),
+                "share_path": str(fb.get("share_path") or ""),
+                "asset_pattern": str(fb.get("asset_pattern") or ""),
+            }
+            if clean["source"] != "fnos" or not clean["share_url"] \
+                    or not clean["share_path"] or not clean["asset_pattern"]:
+                raise ValueError("fallback 字段不完整：需要 source/share_url/share_path/asset_pattern")
+            _fallbacks[plugin_id] = clean
+        _save_fallbacks_locked()
+        return dict(_fallbacks.get(plugin_id)) if plugin_id in _fallbacks else None
+
+
+_load_fallbacks()
 
 
 # ---------------- 工具 ----------------
@@ -170,7 +300,7 @@ def _fetch_release(repo: str) -> tuple[str, dict] | None:
     def _try(mirror: str):
         url = mirror + api if mirror else api
         try:
-            resp = requests.get(url, timeout=_FETCH_PER_SOURCE_TIMEOUT)
+            resp = requests.get(url, timeout=_FETCH_PER_SOURCE_TIMEOUT, proxies=_proxies())
             resp.raise_for_status()
             data = resp.json()
             if isinstance(data, dict) and data.get("tag_name"):
@@ -248,7 +378,7 @@ def _stream_download(url: str, pid: str, stall_timeout: int = 15) -> bytes:
     解决"连接活着但偶尔吐 1 byte 永不触发 read timeout"的慢镜像——
     每次取一块 64KB 都卡住 N 秒，说明镜像本身在拖。
     """
-    resp = requests.get(url, stream=True, timeout=(10, 30))
+    resp = requests.get(url, stream=True, timeout=(10, 30), proxies=_proxies())
     resp.raise_for_status()
     total = int(resp.headers.get("content-length", 0))
     buf = bytearray()
@@ -322,107 +452,215 @@ def _guess_exec_relpath(plugin_dir: Path, hint: str = "") -> str:
     return str(candidates[0].relative_to(plugin_dir))
 
 
-def _install_worker(pid: str, repo: str, force: bool) -> None:
-    """后台线程：拉 Release、选 asset、下载、解压。"""
-    try:
-        rec = _state.get(pid) or {}
-        installed_version = rec.get("installed_version", "")
+def _maybe_unwrap_nested_zip(plugin_dir: Path) -> None:
+    """fnos 单文件分享会自动多套一层 zip 壳：外层 dirname/realfile.zip，
+    内层才是真正的程序包。如果解压后 plugin_dir 里**只有一个 .zip 文件**
+    且没有其他非目录文件，把它就地再解压一次，删掉外层 zip。
 
-        _set_progress(pid, "downloading", 0, "查询 GitHub Release...")
-        result = _fetch_release(repo)
-        if not result:
-            raise RuntimeError("无法获取 Release 信息（GitHub 不可达且镜像全部失败）")
-        # 用户可能在下载阶段就点删除，提前退出
-        with _lock:
-            if pid not in _state:
-                _clear_progress(pid)
-                return
-        mirror, release = result
-        latest = release["tag_name"]
-        if not force and installed_version == latest:
+    GitHub Release 是原生 zip，不会触发这个。
+    """
+    zip_files = list(plugin_dir.rglob("*.zip"))
+    if len(zip_files) != 1:
+        return
+    other_files = [
+        p for p in plugin_dir.rglob("*")
+        if p.is_file() and not p.name.endswith(".zip")
+    ]
+    if other_files:
+        return
+    outer = zip_files[0]
+    try:
+        _safe_extract_zip(outer.read_bytes(), outer.parent)
+        outer.unlink()
+    except Exception:
+        pass
+
+
+def _try_install_from_github(pid: str, repo: str, force: bool) -> None:
+    """主源：拉 GitHub Release、选 asset、多镜像下载、解压。
+    成功（含已是最新版本）返回 None；失败抛异常，外层会尝试 fallback。
+    """
+    rec = _state.get(pid) or {}
+    installed_version = rec.get("installed_version", "")
+
+    _set_progress(pid, "downloading", 0, "查询 GitHub Release...")
+    result = _fetch_release(repo)
+    if not result:
+        raise RuntimeError("无法获取 Release 信息（GitHub 不可达且镜像全部失败）")
+    # 用户可能在下载阶段就点删除，提前退出
+    with _lock:
+        if pid not in _state:
+            _clear_progress(pid)
+            return
+    mirror, release = result
+    latest = release["tag_name"]
+    if not force and installed_version == latest:
+        _set_progress(pid, "done", 100, f"已是最新版本 {latest}")
+        time.sleep(1)
+        _clear_progress(pid)
+        return
+
+    asset = _pick_asset(release.get("assets") or [])
+    if not asset:
+        raise RuntimeError("未找到适合当前系统的安装包")
+
+    # 元数据赢家优先，失败按镜像列表往下试，最后兜底直连
+    dl_url = asset["browser_download_url"]
+    tried: set[str] = set()
+    order: list[str] = []
+    if mirror and mirror not in tried:
+        order.append(mirror)
+        tried.add(mirror)
+    for m in _GH_MIRRORS:
+        if m not in tried:
+            order.append(m)
+            tried.add(m)
+
+    data: bytes | None = None
+    last_err: Exception | None = None
+    for m in order:
+        label = m.rstrip("/") or "直连"
+        url = m + dl_url if m else dl_url
+        _set_progress(pid, "downloading", 0, f"下载 {asset['name']}（{label}）...")
+        try:
+            data = _stream_download(url, pid)
+            break
+        except Exception as e:
+            last_err = e
+            _set_progress(pid, "downloading", 0, f"{label} 失败，切换镜像...")
+            continue
+    if data is None:
+        raise RuntimeError(f"所有镜像下载失败：{last_err}")
+
+    plugin_dir = PLUGINS_DIR / pid
+    if plugin_dir.exists():
+        shutil.rmtree(plugin_dir, ignore_errors=True)
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+
+    _set_progress(pid, "extracting", 100, "解压中...")
+    name_low = asset["name"].lower()
+    if name_low.endswith(".zip"):
+        _safe_extract_zip(data, plugin_dir)
+    elif name_low.endswith((".tar.gz", ".tgz")):
+        _safe_extract_tar(data, plugin_dir)
+    elif name_low.endswith(".exe"):
+        (plugin_dir / asset["name"]).write_bytes(data)
+    elif name_low.endswith(".appimage"):
+        target = plugin_dir / asset["name"]
+        target.write_bytes(data)
+        target.chmod(0o755)
+    else:
+        raise RuntimeError(f"暂不支持该安装包格式: {asset['name']}")
+
+    exec_relpath = _guess_exec_relpath(plugin_dir, rec.get("exec_relpath", ""))
+
+    with _lock:
+        # 安装过程中被 remove：清掉刚解压的目录就退出，不复活 state
+        if pid not in _state:
+            shutil.rmtree(plugin_dir, ignore_errors=True)
+            _clear_progress(pid)
+            return
+        # 用 preset 做底，避免历史残缺记录丢字段（如 repo_url）
+        preset = next((p for p in _PRESETS if p["id"] == pid), None)
+        base = dict(preset) if preset else {}
+        rec = _state.setdefault(pid, base)
+        if preset:
+            for k, v in preset.items():
+                rec.setdefault(k, v)
+        rec["installed_version"] = latest
+        rec["latest_version"] = latest
+        rec["latest_checked_at"] = time.time()
+        rec["exec_relpath"] = exec_relpath
+        rec["last_error"] = ""
+        _save_state_locked()
+
+    _set_progress(pid, "done", 100, f"已安装 {latest}")
+    time.sleep(1)
+    _clear_progress(pid)
+
+
+def _install_from_fnos(pid: str, fb: dict, force: bool) -> None:
+    """备用源：从 fnos 公开分享下载。
+    fb 字段：{share_url, share_path, asset_pattern}。版本号用 modTime 格式化成 vYYYY-MM-DD。
+    """
+    pattern = re.compile(fb["asset_pattern"])
+    _set_progress(pid, "downloading", 0, "查询备用源（fnnas）...")
+    client = fnnas_share.ShareClient(fb["share_url"], _proxies())
+    entry = client.list_latest_file(fb["share_path"], pattern)
+    if not entry:
+        raise RuntimeError("备用源中未找到匹配文件")
+
+    latest = "v" + time.strftime("%Y-%m-%d", time.localtime(entry["modTime"]))
+
+    with _lock:
+        rec = _state.get(pid) or {}
+        if not force and rec.get("installed_version") == latest:
             _set_progress(pid, "done", 100, f"已是最新版本 {latest}")
             time.sleep(1)
             _clear_progress(pid)
             return
 
-        asset = _pick_asset(release.get("assets") or [])
-        if not asset:
-            raise RuntimeError("未找到适合当前系统的安装包")
+    _set_progress(pid, "downloading", 0, f"备用源下载 {entry['file']}...")
+    def on_progress(d, t):
+        pct = round(d / t * 100) if t else 0
+        _set_progress(pid, "downloading", pct, "下载中（fnnas）...")
+    data = client.stream_download(entry, on_progress=on_progress)
 
-        # 元数据赢家优先，失败按镜像列表往下试，最后兜底直连
-        dl_url = asset["browser_download_url"]
-        tried: set[str] = set()
-        order: list[str] = []
-        if mirror and mirror not in tried:
-            order.append(mirror)
-            tried.add(mirror)
-        for m in _GH_MIRRORS:
-            if m not in tried:
-                order.append(m)
-                tried.add(m)
+    plugin_dir = PLUGINS_DIR / pid
+    if plugin_dir.exists():
+        shutil.rmtree(plugin_dir, ignore_errors=True)
+    plugin_dir.mkdir(parents=True, exist_ok=True)
 
-        data: bytes | None = None
-        last_err: Exception | None = None
-        for m in order:
-            label = m.rstrip("/") or "直连"
-            url = m + dl_url if m else dl_url
-            _set_progress(pid, "downloading", 0, f"下载 {asset['name']}（{label}）...")
-            try:
-                data = _stream_download(url, pid)
-                break
-            except Exception as e:
-                last_err = e
-                _set_progress(pid, "downloading", 0, f"{label} 失败，切换镜像...")
-                continue
-        if data is None:
-            raise RuntimeError(f"所有镜像下载失败：{last_err}")
+    _set_progress(pid, "extracting", 100, "解压中...")
+    _safe_extract_zip(data, plugin_dir)
+    _maybe_unwrap_nested_zip(plugin_dir)
 
-        plugin_dir = PLUGINS_DIR / pid
-        if plugin_dir.exists():
+    exec_relpath = _guess_exec_relpath(plugin_dir, rec.get("exec_relpath", ""))
+
+    with _lock:
+        if pid not in _state:
             shutil.rmtree(plugin_dir, ignore_errors=True)
-        plugin_dir.mkdir(parents=True, exist_ok=True)
+            _clear_progress(pid)
+            return
+        preset = next((p for p in _PRESETS if p["id"] == pid), None)
+        base = dict(preset) if preset else {}
+        rec = _state.setdefault(pid, base)
+        if preset:
+            for k, v in preset.items():
+                rec.setdefault(k, v)
+        rec["installed_version"] = latest
+        rec["latest_version"] = latest
+        rec["latest_checked_at"] = time.time()
+        rec["exec_relpath"] = exec_relpath
+        rec["last_error"] = ""
+        _save_state_locked()
 
-        _set_progress(pid, "extracting", 100, "解压中...")
-        name_low = asset["name"].lower()
-        if name_low.endswith(".zip"):
-            _safe_extract_zip(data, plugin_dir)
-        elif name_low.endswith((".tar.gz", ".tgz")):
-            _safe_extract_tar(data, plugin_dir)
-        elif name_low.endswith(".exe"):
-            (plugin_dir / asset["name"]).write_bytes(data)
-        elif name_low.endswith(".appimage"):
-            target = plugin_dir / asset["name"]
-            target.write_bytes(data)
-            target.chmod(0o755)
-        else:
-            raise RuntimeError(f"暂不支持该安装包格式: {asset['name']}")
+    _set_progress(pid, "done", 100, f"已安装 {latest}（备用源）")
+    time.sleep(1)
+    _clear_progress(pid)
 
-        exec_relpath = _guess_exec_relpath(plugin_dir, rec.get("exec_relpath", ""))
 
-        with _lock:
-            # 安装过程中被 remove：清掉刚解压的目录就退出，不复活 state
-            if pid not in _state:
-                shutil.rmtree(plugin_dir, ignore_errors=True)
-                _clear_progress(pid)
-                return
-            # 用 preset 做底，避免历史残缺记录丢字段（如 repo_url）
-            preset = next((p for p in _PRESETS if p["id"] == pid), None)
-            base = dict(preset) if preset else {}
-            rec = _state.setdefault(pid, base)
-            if preset:
-                for k, v in preset.items():
-                    rec.setdefault(k, v)
-            rec["installed_version"] = latest
-            rec["latest_version"] = latest
-            rec["latest_checked_at"] = time.time()
-            rec["exec_relpath"] = exec_relpath
-            rec["last_error"] = ""
-            _save_state_locked()
-
-        _set_progress(pid, "done", 100, f"已安装 {latest}")
-        time.sleep(1)
-        _clear_progress(pid)
-
+def _install_worker(pid: str, repo: str, force: bool) -> None:
+    """后台线程：先试 GitHub 主源，失败时尝试 fallback。"""
+    try:
+        try:
+            _try_install_from_github(pid, repo, force)
+            return
+        except Exception as gh_err:
+            # 主源失败，看有没有备用源
+            with _lock:
+                fb = _get_fallback(pid)
+            if not fb:
+                raise
+            src = fb.get("source", "?")
+            _set_progress(
+                pid, "downloading", 0,
+                f"主源失败（{str(gh_err)[:60]}），切换备用源（{src}）..."
+            )
+            if fb.get("source") == "fnos":
+                _install_from_fnos(pid, fb, force)
+            else:
+                raise RuntimeError(f"不支持的 fallback source: {fb.get('source')}")
     except Exception as e:
         msg = str(e)[:200]
         with _lock:
@@ -717,17 +955,36 @@ def check_updates(plugin_id: str | None = None, force: bool = False) -> dict[str
                 out[pid] = rec.get("latest_version", "")
                 continue
 
-        # preset 没实例化时临时取 repo_url
-        repo_url = (rec or {}).get("repo_url") or next(
-            (p["repo_url"] for p in _PRESETS if p["id"] == pid), ""
-        )
-        if not repo_url:
+        # preset 没实例化时临时取 repo_url / fallback
+        preset = next((p for p in _PRESETS if p["id"] == pid), None)
+        repo_url = (rec or {}).get("repo_url") or (preset or {}).get("repo_url", "")
+        fallback = _get_fallback(pid)
+
+        latest = ""
+        if repo_url:
+            result = _fetch_release(_parse_repo(repo_url))
+            if result:
+                _, release = result
+                latest = release.get("tag_name", "")
+
+        # GitHub 不可达 / 没配 repo_url → 尝试 fallback
+        if not latest and fallback and fallback.get("source") == "fnos":
+            try:
+                client = fnnas_share.ShareClient(fallback["share_url"], _proxies())
+                entry = client.list_latest_file(
+                    fallback["share_path"],
+                    re.compile(fallback["asset_pattern"]),
+                )
+                if entry:
+                    latest = "v" + time.strftime(
+                        "%Y-%m-%d", time.localtime(entry["modTime"])
+                    )
+            except Exception:
+                pass
+
+        if not latest:
             continue
-        result = _fetch_release(_parse_repo(repo_url))
-        if not result:
-            continue
-        _, release = result
-        latest = release.get("tag_name", "")
+
         with _lock:
             r = _state.setdefault(pid, {})
             r["latest_version"] = latest

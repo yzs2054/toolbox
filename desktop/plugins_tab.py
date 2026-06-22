@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -64,7 +65,9 @@ class PluginCard(QWidget):
         self.install_btn = self._mk_btn("安装", None, self._on_install)
         self.update_btn = self._mk_btn("更新", "warning", self._on_update)
         self.remove_btn = self._mk_btn("删除", "secondary", self._on_remove)
-        for b in (self.start_btn, self.stop_btn, self.install_btn, self.update_btn, self.remove_btn):
+        self.usage_btn = self._mk_btn("说明", None, self._on_usage)
+        for b in (self.start_btn, self.stop_btn, self.install_btn,
+                  self.update_btn, self.remove_btn, self.usage_btn):
             row.addWidget(b)
         layout.addLayout(row)
 
@@ -89,6 +92,8 @@ class PluginCard(QWidget):
         return btn
 
     def refresh(self, p: dict):
+        self._description = p.get("description") or ""
+        self.usage_btn.setEnabled(bool(self._description))
         self.name_label.setText(p.get("name") or p["id"])
 
         status = p.get("status", "")
@@ -165,6 +170,9 @@ class PluginCard(QWidget):
             QMessageBox.warning(self, "删除失败", str(e))
         self.plugin_changed.emit()
 
+    def _on_usage(self):
+        QMessageBox.information(self, "使用说明", self._description or "暂无说明")
+
 
 class PluginsTab(QWidget):
     # 后台 check_updates 完成后，靠这个 signal 回到 Qt 主线程刷新
@@ -206,6 +214,23 @@ class PluginsTab(QWidget):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
+        # GitHub 代理设置（仅作用于插件下载）
+        proxy_row = QHBoxLayout()
+        proxy_row.setSpacing(8)
+        proxy_label = QLabel("GitHub 代理")
+        proxy_label.setProperty("role", "muted")
+        proxy_row.addWidget(proxy_label)
+        self.proxy_input = QLineEdit()
+        self.proxy_input.setPlaceholderText("http://127.0.0.1:7890  留空则直连")
+        self.proxy_input.setText(plugins.get_proxy())
+        proxy_row.addWidget(self.proxy_input, 1)
+        self.proxy_save_btn = QPushButton("保存")
+        self.proxy_save_btn.setProperty("variant", "secondary")
+        self.proxy_save_btn.setCursor(Qt.PointingHandCursor)
+        self.proxy_save_btn.clicked.connect(self._on_save_proxy)
+        proxy_row.addWidget(self.proxy_save_btn)
+        layout.addLayout(proxy_row)
+
         # 错误条
         self.error_label = QLabel()
         self.error_label.setStyleSheet("color:#fca5a5;background:#7f1d1d;padding:8px;border-radius:4px;")
@@ -244,12 +269,19 @@ class PluginsTab(QWidget):
             self._cards[p["id"]] = card
 
     def _poll(self):
-        # 仅在存在安装中/运行中的插件时刷新
+        # 每秒原地 refresh 所有卡片。仅当插件增删时才整体 rebuild，
+        # 避免卡在某个状态（旧逻辑只在 installing 时刷，安装完成/启动后不刷新）。
         items = plugins.list_plugins()
-        need_refresh = False
-        for p in items:
-            if p["status"] == "installing":
-                need_refresh = True
-                break
-        if need_refresh:
+        current_ids = {p["id"] for p in items}
+        if current_ids != set(self._cards.keys()):
             self._reload()
+            return
+        for p in items:
+            card = self._cards.get(p["id"])
+            if card:
+                card.refresh(p)
+
+    def _on_save_proxy(self):
+        plugins.set_proxy(self.proxy_input.text().strip())
+        self.proxy_input.setText(plugins.get_proxy())
+        QMessageBox.information(self, "已保存", "代理设置已保存")

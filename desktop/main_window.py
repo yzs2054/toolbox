@@ -1,7 +1,7 @@
 """主窗口：QMainWindow + QTabWidget 装载功能 tab + 菜单栏。"""
 
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QTabWidget
 
 from desktop.about_dialog import AboutDialog
 from desktop.audio_tab import AudioTab
@@ -9,6 +9,10 @@ from desktop.icon import make_app_icon
 from desktop.plugins_tab import PluginsTab
 from desktop.transcode_tab import TranscodeTab
 from desktop.video_tab import VideoTab
+from modules.usage import USAGES
+
+
+_TAB_IDS = ["video", "audio", "transcode", "plugins"]
 
 
 class MainWindow(QMainWindow):
@@ -35,6 +39,8 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
 
         help_menu = self.menuBar().addMenu("帮助(&H)")
+        usage_action = help_menu.addAction("使用说明(&U)...")
+        usage_action.triggered.connect(self._open_usage)
         about_action = help_menu.addAction("关于(&A)...")
         about_action.triggered.connect(self._open_about)
 
@@ -43,3 +49,12 @@ class MainWindow(QMainWindow):
     def _open_about(self):
         dlg = AboutDialog(self)
         dlg.exec()
+
+    def _open_usage(self):
+        idx = self.tabs.currentIndex()
+        if idx < 0 or idx >= len(_TAB_IDS):
+            return
+        usage = USAGES.get(_TAB_IDS[idx])
+        if not usage:
+            return
+        QMessageBox.information(self, usage[0], usage[1])

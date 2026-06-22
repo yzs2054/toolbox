@@ -23,6 +23,7 @@ from modules import system_info
 from modules import updater
 from modules import plugins
 from modules.file_ops import reveal_in_file_manager
+from modules.usage import USAGES
 
 VERSION = updater.get_current_version()
 app = Flask(__name__)
@@ -30,7 +31,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", usages=USAGES)
 
 
 @app.route("/api/video/extract", methods=["POST"])
@@ -194,6 +195,44 @@ def api_update_progress():
 @app.route("/api/plugins/list", methods=["GET"])
 def api_plugins_list():
     return jsonify({"items": plugins.list_plugins()})
+
+
+@app.route("/api/plugins/proxy", methods=["GET"])
+def api_plugins_proxy_get():
+    return jsonify({"proxy": plugins.get_proxy()})
+
+
+@app.route("/api/plugins/proxy", methods=["POST"])
+def api_plugins_proxy_set():
+    data = request.get_json(force=True) or {}
+    proxy = plugins.set_proxy(data.get("proxy") or "")
+    return jsonify({"ok": True, "proxy": proxy})
+
+
+# 备用源配置（不公开 UI，仅 API 供管理员远程改 / 读 plugins/fallback.json）
+@app.route("/api/plugins/fallback", methods=["GET"])
+def api_plugins_fallback_get():
+    pid = request.args.get("id")
+    if pid:
+        return jsonify({"fallback": plugins.get_fallback(pid)})
+    # 全量：从 _fallbacks 拿（运行时内存）
+    with plugins._lock:
+        items = {pid: dict(fb) for pid, fb in plugins._fallbacks.items()}
+    return jsonify({"items": items})
+
+
+@app.route("/api/plugins/fallback", methods=["POST"])
+def api_plugins_fallback_set():
+    data = request.get_json(force=True) or {}
+    pid = data.get("id")
+    fb = data.get("fallback")
+    if not pid:
+        return jsonify({"error": "参数缺失"}), 400
+    try:
+        ret = plugins.set_fallback(pid, fb)
+        return jsonify({"ok": True, "fallback": ret})
+    except ValueError as e:
+        return jsonify({"error": str(e)[:200]}), 400
 
 
 @app.route("/api/plugins/add", methods=["POST"])

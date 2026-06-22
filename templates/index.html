@@ -16,12 +16,16 @@
     </h1>
 
     <!-- Tab 导航 -->
-    <div class="flex border-b border-gray-700 mb-6" id="tabs">
+    <div class="flex border-b border-gray-700 mb-6 items-center" id="tabs">
       <button class="tab-btn active px-5 py-2" data-tab="video">视频下载</button>
       <button class="tab-btn px-5 py-2 text-gray-500" data-tab="audio">音频提取</button>
       <button class="tab-btn px-5 py-2 text-gray-500" data-tab="transcode">视频转码</button>
       <button class="tab-btn px-5 py-2 text-gray-500" data-tab="plugins">插件管理</button>
       <button class="tab-btn px-5 py-2 text-gray-500" data-tab="system">系统信息</button>
+      <button onclick="showTabUsage()"
+              class="ml-auto text-xs text-gray-500 hover:text-gray-300 whitespace-nowrap">
+        使用说明
+      </button>
     </div>
 
     <!-- 视频下载 Tab -->
@@ -154,9 +158,46 @@
 
     <!-- 插件管理 Tab -->
     <div id="tab-plugins" class="tab-panel">
+      <div class="bg-gray-800 border border-gray-700 rounded-lg p-3 mb-4 flex items-center gap-2 flex-wrap">
+        <span class="text-xs text-gray-400 whitespace-nowrap">GitHub 代理</span>
+        <input id="plugin-proxy" type="text" placeholder="http://127.0.0.1:7890  留空则直连"
+               class="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500 min-w-[200px]">
+        <button onclick="savePluginProxy()"
+                class="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded text-sm font-medium whitespace-nowrap">
+          保存
+        </button>
+      </div>
       <div id="plugin-error" class="hidden bg-red-900/30 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4"></div>
       <div id="plugin-list" class="space-y-3"></div>
     </div>
+
+    <!-- 插件使用说明弹窗 -->
+    <dialog id="plugin-usage-modal" class="rounded-lg bg-gray-800 text-gray-100 p-0 max-w-lg w-full">
+      <div class="p-5">
+        <h3 id="plugin-usage-title" class="text-lg font-semibold mb-3"></h3>
+        <p id="plugin-usage-body" class="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"></p>
+        <div class="mt-5 text-right">
+          <button onclick="document.getElementById('plugin-usage-modal').close()"
+                  class="bg-gray-700 hover:bg-gray-600 px-4 py-1.5 rounded text-sm font-medium">
+            关闭
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- 功能使用说明弹窗 -->
+    <dialog id="tab-usage-modal" class="rounded-lg bg-gray-800 text-gray-100 p-0 max-w-lg w-full">
+      <div class="p-5">
+        <h3 id="tab-usage-title" class="text-lg font-semibold mb-3"></h3>
+        <p id="tab-usage-body" class="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed"></p>
+        <div class="mt-5 text-right">
+          <button onclick="document.getElementById('tab-usage-modal').close()"
+                  class="bg-gray-700 hover:bg-gray-600 px-4 py-1.5 rounded text-sm font-medium">
+            关闭
+          </button>
+        </div>
+      </div>
+    </dialog>
 
     <!-- 系统 Tab -->
     <div id="tab-system" class="tab-panel">
@@ -185,6 +226,7 @@
     </div>
   </div>
 
+  <script>window.USAGES = {{ usages|tojson|safe }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
