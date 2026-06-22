@@ -29,6 +29,10 @@ from urllib.parse import urlparse
 
 import requests
 
+from .logger import get_logger
+
+log = get_logger(__name__)
+
 # 协议常量
 _HOST = "https://s6.fnnas.net"
 _SALT = "NDzZTVxnRKP8Z0jXg1VAMonaG8akvh"
@@ -125,18 +129,21 @@ class ShareClient:
         self.share_id, self.auth = _fetch_token(share_url, proxies)
 
     def _refresh(self) -> None:
+        log.debug("refreshing fnnos token: share=%s", self.share_url)
         self.share_id, self.auth = _fetch_token(self.share_url, self.proxies)
 
     def _post(self, api_path: str, body: dict) -> dict:
         """POST，遇 'invalid sign' 自动刷新 token 重试。"""
         last_err: Exception | None = None
-        for _ in range(self.max_refresh):
+        for attempt in range(self.max_refresh):
             try:
                 return _post_raw(self.share_id, self.auth, api_path, body,
                                  self.proxies)
             except RuntimeError as e:
                 if "invalid sign" not in str(e):
                     raise
+                log.info("fnos invalid sign, refreshing token (attempt %d/%d)",
+                         attempt + 1, self.max_refresh)
                 last_err = e
                 self._refresh()
         raise last_err  # type: ignore
@@ -218,6 +225,9 @@ class ShareClient:
 
         stall_timeout：单次 iter_content 阻塞超过 N 秒抛 TimeoutError。
         """
+        name = file_entry.get("file", "?")
+        size = file_entry.get("size", 0)
+        log.info("fnos download start: %s size=%s", name, size)
         dl_path = self.fetch_download_url(file_entry)
         resp = requests.get(
             f"{_HOST}{dl_path}",
@@ -251,4 +261,5 @@ class ShareClient:
                     on_progress(done, total)
                 except Exception:
                     pass
+        log.info("fnos download done: %s bytes=%d", name, len(buf))
         return bytes(buf)

@@ -23,7 +23,10 @@ from urllib.parse import urlparse
 import requests
 
 from . import fnnas_share
+from .logger import get_logger
 from .subprocess_util import NO_WINDOW
+
+log = get_logger(__name__)
 
 DATA_DIR = Path("data")
 PLUGINS_DIR = Path("plugins")
@@ -642,27 +645,35 @@ def _install_from_fnos(pid: str, fb: dict, force: bool) -> None:
 
 def _install_worker(pid: str, repo: str, force: bool) -> None:
     """后台线程：先试 GitHub 主源，失败时尝试 fallback。"""
+    log.info("install start: pid=%s repo=%s force=%s", pid, repo, force)
     try:
         try:
             _try_install_from_github(pid, repo, force)
+            log.info("install ok: pid=%s via github", pid)
             return
         except Exception as gh_err:
             # 主源失败，看有没有备用源
             with _lock:
                 fb = _get_fallback(pid)
             if not fb:
+                log.warning("install failed (no fallback): pid=%s err=%s",
+                            pid, gh_err)
                 raise
             src = fb.get("source", "?")
+            log.info("primary failed, switching to fallback: pid=%s source=%s err=%s",
+                     pid, src, gh_err)
             _set_progress(
                 pid, "downloading", 0,
                 f"主源失败（{str(gh_err)[:60]}），切换备用源（{src}）..."
             )
             if fb.get("source") == "fnos":
                 _install_from_fnos(pid, fb, force)
+                log.info("install ok: pid=%s via fnos", pid)
             else:
                 raise RuntimeError(f"不支持的 fallback source: {fb.get('source')}")
     except Exception as e:
         msg = str(e)[:200]
+        log.exception("install failed: pid=%s", pid)
         with _lock:
             rec = _state.get(pid)
             if rec is not None:
@@ -712,6 +723,7 @@ def start(plugin_id: str) -> None:
         # 已在跑就别再起
         existing = _processes.get(plugin_id)
         if existing and existing.poll() is None:
+            log.info("start skipped (already running): pid=%s", plugin_id)
             return
 
         exe = (PLUGINS_DIR / plugin_id / rec["exec_relpath"]).resolve()
@@ -722,15 +734,18 @@ def start(plugin_id: str) -> None:
 
         workdir = (PLUGINS_DIR / plugin_id).resolve()
         needs_admin = bool(rec.get("needs_admin")) and _current_os() == "windows"
+        log.info("start: pid=%s exe=%s needs_admin=%s", plugin_id, exe, needs_admin)
 
         if needs_admin:
             ok = _spawn_elevated(exe, workdir)
+            log.info("_spawn_elevated returned %s: pid=%s", ok, plugin_id)
             if not ok:
                 rec["last_error"] = "启动失败（可能拒绝了授权）"
                 _save_state_locked()
                 raise RuntimeError(rec["last_error"])
             # ShellExecuteW 拿不到 Popen，用一个 sentinel 占位，stop 走 taskkill
             _processes[plugin_id] = _ElevatedSentinel(exe.name)
+            log.info("sentinel added: pid=%s image=%s", plugin_id, exe.name)
         else:
             try:
                 proc = subprocess.Popen(
@@ -743,8 +758,10 @@ def start(plugin_id: str) -> None:
             except Exception as e:
                 rec["last_error"] = f"启动失败：{e}"
                 _save_state_locked()
+                log.exception("Popen failed: pid=%s", plugin_id)
                 raise
             _processes[plugin_id] = proc
+            log.info("Popen ok: pid=%s proc_pid=%s", plugin_id, proc.pid)
 
         rec["last_error"] = ""
         _save_state_locked()
@@ -772,7 +789,9 @@ def stop(plugin_id: str) -> None:
     with _lock:
         proc = _processes.pop(plugin_id, None)
     if not proc:
+        log.info("stop noop (not running): pid=%s", plugin_id)
         return
+    log.info("stop: pid=%s", plugin_id)
     try:
         proc.terminate()
         try:
@@ -781,8 +800,8 @@ def stop(plugin_id: str) -> None:
         except Exception:
             pass
         proc.kill()
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("stop failed: pid=%s err=%s", plugin_id, e)
 
 
 def _cleanup_processes() -> None:

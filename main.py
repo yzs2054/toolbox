@@ -19,6 +19,9 @@ if __name__ == "__main__":
         _exe_dir = str(Path(sys.executable).parent)
         os.environ["PATH"] = _exe_dir + os.pathsep + os.environ.get("PATH", "")
 
+    from modules.logger import setup_logging
+    setup_logging()
+
     from PySide6.QtWidgets import QApplication
     from desktop.icon import make_app_icon
     from desktop.main_window import MainWindow

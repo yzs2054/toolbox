@@ -23,7 +23,11 @@ from modules import system_info
 from modules import updater
 from modules import plugins
 from modules.file_ops import reveal_in_file_manager
+from modules.logger import setup_logging, get_logger
 from modules.usage import USAGES
+
+setup_logging()
+log = get_logger(__name__)
 
 VERSION = updater.get_current_version()
 app = Flask(__name__)
