@@ -166,38 +166,62 @@ _load_proxy()
 # ---------------- 备用下载源配置（不公开：用户手动编辑 plugins/fallback.json） ----------------
 # 结构：{plugin_id: {"source": "fnos", "share_url": ..., "share_path": ..., "asset_pattern": ...}}
 _fallbacks: dict[str, dict] = {}
+_fallbacks_mtime: float = 0.0  # 上次加载时的文件 mtime；用于增量 reload
 
 
 def _load_fallbacks() -> None:
-    """加载 fallback.json。格式：{plugin_id: {source, share_url, share_path, asset_pattern}}。
-    出错静默忽略（文件可能用户手写到一半）。
+    """加载 fallback.json。幂等：文件 mtime 没变就直接 return，变了才重新解析。
+
+    用户手动编辑文件后无需重启——下次 _get_fallback 调用会触发本函数，
+    stat 拿到新 mtime 自动 reload。出错（JSON 语法错）时保留旧内存配置，
+    等用户改对后再 reload。
     """
+    global _fallbacks_mtime
     if not FALLBACK_FILE.exists():
+        if _fallbacks:
+            _fallbacks.clear()
+            _fallbacks_mtime = 0.0
+            log.info("fallback.json removed, cleared in-memory fallbacks")
         return
     try:
+        mtime = FALLBACK_FILE.stat().st_mtime
+        if mtime == _fallbacks_mtime:
+            return  # 文件没变
         data = json.loads(FALLBACK_FILE.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return
-        for pid, fb in data.items():
-            if not isinstance(fb, dict) or not pid:
-                continue
-            fb.setdefault("source", "fnos")
-            if fb.get("source") == "fnos" and fb.get("share_url") \
-                    and fb.get("share_path") and fb.get("asset_pattern"):
-                _fallbacks[pid] = fb
-    except Exception:
-        pass
+        new_fbs: dict[str, dict] = {}
+        if isinstance(data, dict):
+            for pid, fb in data.items():
+                if not isinstance(fb, dict) or not pid:
+                    continue
+                fb.setdefault("source", "fnos")
+                if fb.get("source") == "fnos" and fb.get("share_url") \
+                        and fb.get("share_path") and fb.get("asset_pattern"):
+                    new_fbs[pid] = fb
+        # 原子替换：clear + update，避免半加载状态
+        _fallbacks.clear()
+        _fallbacks.update(new_fbs)
+        _fallbacks_mtime = mtime
+        log.info("fallback.json reloaded: %d entries", len(_fallbacks))
+    except Exception as e:
+        log.warning("fallback.json parse failed, keeping old config: %s", e)
 
 
 def _save_fallbacks_locked() -> None:
+    global _fallbacks_mtime
     tmp = FALLBACK_FILE.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(_fallbacks, ensure_ascii=False, indent=2),
                    encoding="utf-8")
     tmp.replace(FALLBACK_FILE)
+    # 更新 mtime，避免下次 _load_fallbacks 多余 reload（reload 出来的也是同一份内容，无害，但省一次 stat 后的文件读）
+    try:
+        _fallbacks_mtime = FALLBACK_FILE.stat().st_mtime
+    except Exception:
+        pass
 
 
 def _get_fallback(pid: str) -> dict | None:
     """取插件 fallback 配置。state 里的（用户运行时塞进来的）优先于文件。"""
+    _load_fallbacks()  # 幂等 stat，mtime 变了才真 reload
     rec = _state.get(pid) or {}
     return rec.get("fallback") or _fallbacks.get(pid)
 
@@ -588,7 +612,8 @@ def _install_from_fnos(pid: str, fb: dict, force: bool) -> None:
     """
     pattern = re.compile(fb["asset_pattern"])
     _set_progress(pid, "downloading", 0, "查询备用源（fnnas）...")
-    client = fnnas_share.ShareClient(fb["share_url"], _proxies())
+    # fnos 是国内服务，不走 GitHub 代理（否则代理打不通 fnnas 会整条线挂掉）
+    client = fnnas_share.ShareClient(fb["share_url"], None)
     entry = client.list_latest_file(fb["share_path"], pattern)
     if not entry:
         raise RuntimeError("备用源中未找到匹配文件")
@@ -990,7 +1015,7 @@ def check_updates(plugin_id: str | None = None, force: bool = False) -> dict[str
         # GitHub 不可达 / 没配 repo_url → 尝试 fallback
         if not latest and fallback and fallback.get("source") == "fnos":
             try:
-                client = fnnas_share.ShareClient(fallback["share_url"], _proxies())
+                client = fnnas_share.ShareClient(fallback["share_url"], None)
                 entry = client.list_latest_file(
                     fallback["share_path"],
                     re.compile(fallback["asset_pattern"]),
