@@ -34,6 +34,23 @@ _MIRRORS = [
 _CHECK_TOTAL_TIMEOUT = 8.0
 _CHECK_PER_SOURCE_TIMEOUT = (3, 5)  # (connect, read)
 
+
+def _load_user_proxy() -> dict | None:
+    """读 plugins/proxy.json，用户在前端配的代理 updater 也跟着用。
+    plugins 模块独立维护这份状态，这里直接读文件避免循环依赖。"""
+    try:
+        from pathlib import Path
+        p = Path("plugins/proxy.json")
+        if not p.exists():
+            return None
+        data = json.loads(p.read_text(encoding="utf-8"))
+        url = str((data or {}).get("proxy") or "").strip()
+        if not url:
+            return None
+        return {"http": url, "https": url}
+    except Exception:
+        return None
+
 _progress = {"status": "idle", "progress": 0, "message": ""}
 _working_mirror = ""  # 检查阶段成功的镜像前缀，下载阶段复用
 
@@ -68,7 +85,8 @@ def _fetch_release_json() -> tuple[str, dict] | None:
 
     def _try(mirror_prefix: str, url: str):
         try:
-            resp = requests.get(url, timeout=_CHECK_PER_SOURCE_TIMEOUT)
+            resp = requests.get(url, timeout=_CHECK_PER_SOURCE_TIMEOUT,
+                                proxies=_load_user_proxy())
             resp.raise_for_status()
             data = resp.json()
             if isinstance(data, dict) and data.get("tag_name"):
@@ -130,7 +148,8 @@ def check_update() -> dict:
 def _stream_download(url: str, timeout=(10, 30)) -> requests.Response | None:
     """发起流式 GET，连接失败/4xx/5xx 返回 None。"""
     try:
-        resp = requests.get(url, stream=True, timeout=timeout)
+        resp = requests.get(url, stream=True, timeout=timeout,
+                            proxies=_load_user_proxy())
         resp.raise_for_status()
         return resp
     except Exception:
